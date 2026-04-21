@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #050D1A;
+  color: #C8A9A0;
+}
+
+@layer components {
+  .card-lol {
+    @apply bg-[#112240] border border-[#1E3A5F] rounded-lg p-4;
+  }
+  .btn-gold {
+    @apply bg-[#C8A84B] text-[#0A1428] font-bold px-4 py-2 rounded hover:bg-[#E8D48B] transition-colors disabled:opacity-50;
+  }
+  .btn-outline-gold {
+    @apply border border-[#C8A84B] text-[#C8A84B] px-4 py-2 rounded hover:bg-[#C8A84B]/10 transition-colors;
+  }
+  .input-lol {
+    @apply w-full bg-[#0A1428] border border-[#1E3A5F] rounded px-3 py-2 text-white focus:border-[#C8A84B] outline-none transition-colors;
+  }
+  .badge-tier {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-bold;
+  }
+}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0A1428; }
+::-webkit-scrollbar-thumb { background: #1E3A5F; border-radius: 3px; }

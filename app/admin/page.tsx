@@ -1,0 +1,59 @@
+import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+export default async function AdminDashboard() {
+  const supabase = await createClient();
+  const [
+    { count: totalPlayers },
+    { count: totalTeams },
+    { count: activeT },
+    { count: pendingReports },
+    { data: recentTournaments },
+  ] = await Promise.all([
+    supabase.from("riot_accounts").select("*", { count:"exact", head:true }),
+    supabase.from("teams").select("*", { count:"exact", head:true }),
+    supabase.from("tournaments").select("*", { count:"exact", head:true }).eq("status","ongoing"),
+    supabase.from("match_reports").select("*", { count:"exact", head:true }).eq("status","pending"),
+    supabase.from("tournaments").select("id,name,slug,status").order("created_at",{ ascending:false }).limit(5),
+  ]);
+  const stats = [
+    { label:"Invocadores",       value:totalPlayers  ?? 0, icon:"👤", color:"text-blue-400",   href:"/admin/jogadores" },
+    { label:"Times inscritos",   value:totalTeams    ?? 0, icon:"🛡️", color:"text-green-400",  href:"/admin/torneios" },
+    { label:"Em andamento",      value:activeT       ?? 0, icon:"⚔️", color:"text-[#C8A84B]",  href:"/admin/torneios" },
+    { label:"Reports pendentes", value:pendingReports ?? 0, icon:"⚠️", color:"text-red-400",    href:"/admin/partidas" },
+  ];
+  const statusColor: Record<string,string> = {
+    open:"text-green-400", checkin:"text-blue-400", ongoing:"text-yellow-400",
+    finished:"text-gray-400", draft:"text-gray-500",
+  };
+  return (
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold text-white">Dashboard Admin</h1>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map(s => (
+          <Link key={s.label} href={s.href} className="card-lol text-center hover:border-[#C8A84B]/40 transition-colors">
+            <p className="text-3xl mb-2">{s.icon}</p>
+            <p className={"text-3xl font-bold " + s.color}>{s.value}</p>
+            <p className="text-gray-400 text-xs mt-1">{s.label}</p>
+          </Link>
+        ))}
+      </div>
+      <div className="card-lol">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-white">Torneios Recentes</h2>
+          <Link href="/admin/torneios/criar" className="btn-gold text-sm px-3 py-1.5">+ Novo Torneio</Link>
+        </div>
+        <div className="space-y-2">
+          {recentTournaments?.map(t => (
+            <div key={t.id} className="flex items-center justify-between bg-[#0A1428] rounded p-3">
+              <p className="text-white">{t.name}</p>
+              <div className="flex items-center gap-4">
+                <span className={"text-xs font-medium capitalize " + (statusColor[t.status] ?? "text-gray-400")}>{t.status}</span>
+                <Link href={"/torneios/" + t.slug} className="text-gray-500 hover:text-[#C8A84B] text-xs">Ver →</Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
