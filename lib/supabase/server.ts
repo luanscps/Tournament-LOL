@@ -1,8 +1,8 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import type { CookieOptions } from "@supabase/ssr";
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
-// Usar em Server Actions e Route Handlers (pode escrever cookies)
+// Padrao oficial Supabase SSR - unico client para Server Components, Actions e Route Handlers
+// O middleware e responsavel por atualizar os cookies de sessao em todo request
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -14,35 +14,13 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-}
-
-// Usar em Server Components (somente leitura - nao escreve cookies)
-export async function createReadOnlyClient() {
-  const cookieStore = await cookies();
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
+        setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
           } catch {
-            // Ignorado em Server Components
+            // Ignorado em Server Components - o middleware cuida do refresh dos tokens
           }
         },
       },
