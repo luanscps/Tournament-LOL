@@ -52,7 +52,7 @@ export default async function TournamentPage({ params }: { params: { slug: strin
             <p className="text-gray-400 text-xs">Partidas jogadas</p>
           </div>
         </div>
-        {tournament.status === "open" && userData?.user && (
+              {tournament.status === "open" && userData && (
           <div className="mt-4 pt-4 border-t border-[#1E3A5F]">
             <Link href={"/dashboard/time/criar?tournament=" + tournament.id} className="btn-gold">+ Inscrever Meu Time</Link>
           </div>
