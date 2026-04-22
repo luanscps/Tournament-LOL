@@ -28,8 +28,9 @@ async function getTime(slug: string) {
 export default async function TimePublicPage({
   params,
 }: {
-  params: { slug: string };
+    params: Promise<{ slug: string }>;
 }) {
+        const { slug } = await params;
   const time = await getTime(params.slug);
   if (!time) return notFound();
 
