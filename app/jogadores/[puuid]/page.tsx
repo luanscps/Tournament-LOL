@@ -25,9 +25,10 @@ async function getJogadorByPuuid(puuid: string) {
 export default async function JogadorPublicPage({
   params,
 }: {
-  params: { puuid: string };
+  params: Promise<{ puuid: string }>;
 }) {
-  const jogador = await getJogadorByPuuid(params.puuid);
+  const { puuid } = await params;
+  const jogador = await getJogadorByPuuid(puuid);
   if (!jogador) return notFound();
 
   const team = jogador.teams as any;
@@ -56,22 +57,12 @@ export default async function JogadorPublicPage({
             <p className="text-gray-400 text-xs mb-2">Time</p>
             <Link
               href={`/times/${team.tag}`}
-              className="text-blue-400 hover:underline font-medium"
+              className="text-blue-400 hover:underline font-semibold"
             >
-              {team.name} [{team.tag}]
+              [{team.tag}] {team.name}
             </Link>
           </div>
         )}
-
-        <div className="bg-[#0A1628] border border-[#1E3A5F] rounded-xl p-4">
-          <p className="text-gray-400 text-xs mb-3">Ver historico completo de partidas</p>
-          <Link
-            href={`/profile/${encodeURIComponent(jogador.summoner_name + '-' + jogador.tag_line)}`}
-            className="bg-[#1E3A5F] text-white px-4 py-2 rounded-lg text-sm hover:bg-[#2A4A6F] inline-block"
-          >
-            Abrir perfil com historico
-          </Link>
-        </div>
       </div>
     </main>
   );
