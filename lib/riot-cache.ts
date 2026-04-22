@@ -10,5 +10,5 @@ export function setCached<T>(key: string, data: T, ttlSeconds = 300): void {
   store.set(key, { data, expiresAt: Date.now() + ttlSeconds * 1000 });
 }
 export function invalidateCache(prefix: string): void {
-  for (const key of store.keys()) { if (key.startsWith(prefix)) store.delete(key); }
+    for (const key of Array.from(store.keys())) { if (key.startsWith(prefix)) store.delete(key); }
 }
