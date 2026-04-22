@@ -8,7 +8,7 @@ import Link from 'next/link';
 const DD_VERSION = '14.10.1';
 
 async function getJogadorByPuuid(puuid: string) {
-  const supabase = createClient();
+      const supabase = await createClient();
   const { data, error } = await supabase
     .from('players')
     .select(`
