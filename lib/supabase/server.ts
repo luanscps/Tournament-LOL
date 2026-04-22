@@ -1,7 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-// Padrao oficial Supabase SSR - Next.js 15 App Router
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -14,13 +13,11 @@ export async function createClient() {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // Ignorado em Server Components - o middleware cuida do refresh dos tokens
-          }
+          // SEM try/catch - a Server Action de login precisa gravar o cookie de sessao
+          // O try/catch silenciava o erro e impedia o token de ser salvo
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          );
         },
       },
     }
