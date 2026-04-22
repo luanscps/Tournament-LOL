@@ -1,9 +1,12 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import type { CookieOptions } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  // Padrao oficial Supabase SSR para middleware
+  // IMPORTANTE: nao modificar a logica de supabaseResponse sem seguir as instrucoes abaixo
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,16 +16,18 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          // Passo 1: atualiza cookies no request
+        setAll(cookiesToSet) {
+          // Passo 1: propagar cookies no request
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          // Passo 2: recria o response com o request atualizado
-          supabaseResponse = NextResponse.next({ request });
-          // Passo 3: propaga os cookies para o response
+          // Passo 2: recriar o response com o request atualizado
+          supabaseResponse = NextResponse.next({
+            request,
+          });
+          // Passo 3: propagar cookies no response
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options ?? {})
+            supabaseResponse.cookies.set(name, value, options)
           );
         },
       },
@@ -30,29 +35,34 @@ export async function middleware(request: NextRequest) {
   );
 
   // IMPORTANTE: usar getUser() e nao getSession() para validar no servidor
+  // NAO remover este await - necessario para que o token seja atualizado
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const protectedPaths = ["/dashboard", "/admin"];
+  const protectedPaths = ['/dashboard', '/admin'];
 
+  // Redireciona usuario nao autenticado para login
   if (protectedPaths.some((p) => pathname.startsWith(p)) && !user) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
+    redirectUrl.pathname = '/login';
     return NextResponse.redirect(redirectUrl);
   }
 
   // Redireciona usuario ja logado que tenta acessar /login ou /register
-  if ((pathname === "/login" || pathname === "/register") && user) {
+  if ((pathname === '/login' || pathname === '/register') && user) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
+    redirectUrl.pathname = '/dashboard';
     return NextResponse.redirect(redirectUrl);
   }
 
+  // IMPORTANTE: retornar supabaseResponse para que os cookies sejam propagados
   return supabaseResponse;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/riot).*)"],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|api/riot.*).*)',
+  ],
 };
