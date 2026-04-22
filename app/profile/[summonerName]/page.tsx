@@ -55,7 +55,6 @@ export default async function ProfilePage({
                   assists={match.assists}
                   win={match.win}
                   gameDuration={match.minutes * 60}
-                  DD_VERSION={DD_VERSION}
                 />
               ))
             ) : (
