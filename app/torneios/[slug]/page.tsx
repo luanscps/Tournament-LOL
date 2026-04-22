@@ -5,9 +5,10 @@ import { BracketView } from "@/components/tournament/BracketView";
 import { StandingsTable } from "@/components/tournament/StandingsTable";
 import { TeamsList } from "@/components/tournament/TeamsList";
 import { getQueueLabel } from "@/lib/utils";
-export default async function TournamentPage({ params }: { params: { slug: string } }) {
+export default async function TournamentPage({ params }: { params: Promise<{ slug: string }> }) {
+    const { slug } = await params;
   const supabase = await createClient();
-  const { data: tournament } = await supabase.from("tournaments").select("*").eq("slug", params.slug).single();
+    const { data: tournament } = await supabase.from("tournaments").select("*").eq("slug", slug).single();
   if (!tournament) notFound();
     const [{ data: teams }, { data: matches }, { data: standings }, { data: { user: userData } }] = await Promise.all([
     supabase.from("teams").select("*, captain:profiles!captain_id(username,display_name), team_members(count)").eq("tournament_id", tournament.id).order("seed"),
