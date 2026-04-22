@@ -13,7 +13,7 @@ interface AuditLog {
   record_id: string | null
   old_data: Record<string, unknown> | null
   new_data: Record<string, unknown> | null
-  users?: { email: string | null } | null
+  profiles?: { email: string | null } | null
 }
 
 export default async function AuditLogPage({
@@ -24,25 +24,26 @@ export default async function AuditLogPage({
   const { page: pageParam, table: tableFilter, action: actionFilter } = await searchParams
   const supabase = await createClient()
 
-  // Check admin access
+  // Verifica acesso de admin usando public.profiles (is_admin boolean)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('users')
-    .select('role')
+    .from('profiles')
+    .select('is_admin')
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') notFound()
+  if (!profile?.is_admin) notFound()
 
   const page = parseInt(pageParam ?? '1')
   const limit = 50
   const offset = (page - 1) * limit
 
+  // Join com profiles para obter email do admin
   let query = supabase
     .from('audit_log')
-    .select('*, users(email)', { count: 'exact' })
+    .select('*, profiles(email)', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
@@ -141,7 +142,7 @@ export default async function AuditLogPage({
                     })}
                   </td>
                   <td className="px-4 py-3 text-gray-300">
-                    {(log as { users?: { email?: string | null } | null }).users?.email ?? (
+                    {log.profiles?.email ?? (
                       <span className="text-gray-600 italic">Sistema</span>
                     )}
                   </td>
