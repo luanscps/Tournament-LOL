@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 
 async function getJogador(id: string) {
-  const supabase = createClient();
+      const supabase = await createClient();
   const { data, error } = await supabase
     .from('players')
     .select(`
