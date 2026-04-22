@@ -21,9 +21,10 @@ async function getPlayerProfile(summonerName: string) {
 export default async function ProfilePage({
   params,
 }: {
-  params: { summonerName: string };
+  params: Promise<{ summonerName: string }>;
 }) {
-  const data = await getPlayerProfile(params.summonerName);
+  const { summonerName } = await params;
+  const data = await getPlayerProfile(summonerName);
   if (!data) return notFound();
 
   return (
@@ -52,14 +53,13 @@ export default async function ProfilePage({
                   kills={match.kills}
                   deaths={match.deaths}
                   assists={match.assists}
-                
                   win={match.win}
-                              gameDuration={match.minutes * 60}
-            
+                  gameDuration={match.minutes * 60}
+                  DD_VERSION={DD_VERSION}
                 />
               ))
             ) : (
-              <p className="text-gray-500 text-sm">Nenhuma partida encontrada.</p>
+              <p className="text-gray-400 text-sm">Nenhuma partida encontrada.</p>
             )}
           </div>
         </section>
