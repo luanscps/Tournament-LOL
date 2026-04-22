@@ -2,10 +2,10 @@ import React from 'react';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import UserPermissionsForm from '@/components/admin/UserPermissionsForm';
+import { UserPermissionsForm } from '@/components/admin/UserPermissionsForm';
 
 async function getUsuario(id: string) {
-  const supabase = createClient();
+      const supabase = await createClient();
   const { data, error } = await supabase
     .from('profiles')
     .select('id, email, full_name, is_admin, is_banned, created_at')
