@@ -25,15 +25,16 @@ export function TournamentForm({ mode, tournamentId, defaultValues }: Props) {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    startTransition(async () => {
-      const result =
+        startTransition(() => {
+            void (async () => {
+const result =
         mode === "create"
           ? await createTournament(fd)
           : await updateTournament(tournamentId!, fd);
       if (result && "error" in result) { alert(result.error); return; }
       router.push("/admin/torneios");
-    });
-  }
+          })();
+      });
 
   const inputClass =
     "w-full bg-[#0A1428] border border-[#1E3A5F] rounded px-3 py-2 text-white text-sm focus:border-[#C8A84B] outline-none";
