@@ -7,7 +7,7 @@ import TeamCard from '@/components/profile/TeamCard';
 const DD_VERSION = '14.10.1';
 
 async function getTime(slug: string) {
-  const supabase = createClient();
+      const supabase = await createClient();
   // slug pode ser o tag do time (ex: "TSM") ou o id
   const { data, error } = await supabase
     .from('teams')
