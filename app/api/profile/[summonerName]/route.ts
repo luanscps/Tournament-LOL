@@ -9,10 +9,11 @@ import {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { summonerName: string } }
+  { params }: { params: Promise<{ summonerName: string }> }
 ) {
+  const { summonerName } = await params;
   try {
-    const raw = decodeURIComponent(params.summonerName);
+    const raw = decodeURIComponent(summonerName);
     const [name, tag] = raw.includes('-') ? raw.split('-') : [raw, 'BR1'];
 
     const account = await getAccountByRiotId(name, tag);
