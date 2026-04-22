@@ -39,14 +39,14 @@ export function InscricaoRow({
       {status === "pending" && (
         <div className="flex gap-2 shrink-0">
           <button
-            onClick={() => startTransition(() => aprovarInscricao(teamId, tournamentId))}
+                        onClick={() => startTransition(() => { void aprovarInscricao(teamId, tournamentId); })}
             disabled={pending}
             className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1 rounded disabled:opacity-50"
           >
             Aprovar
           </button>
           <button
-            onClick={() => startTransition(() => rejeitarInscricao(teamId, tournamentId))}
+                        onClick={() => startTransition(() => { void rejeitarInscricao(teamId, tournamentId); })}
             disabled={pending}
             className="bg-red-600 hover:bg-red-500 text-white text-xs px-3 py-1 rounded disabled:opacity-50"
           >
