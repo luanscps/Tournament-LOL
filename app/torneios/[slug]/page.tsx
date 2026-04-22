@@ -9,11 +9,11 @@ export default async function TournamentPage({ params }: { params: { slug: strin
   const supabase = await createClient();
   const { data: tournament } = await supabase.from("tournaments").select("*").eq("slug", params.slug).single();
   if (!tournament) notFound();
-  const [{ data: teams }, { data: matches }, { data: standings }, { data: userData }] = await Promise.all([
+    const [{ data: teams }, { data: matches }, { data: standings }, { data: { user: userData } }] = await Promise.all([
     supabase.from("teams").select("*, captain:profiles!captain_id(username,display_name), team_members(count)").eq("tournament_id", tournament.id).order("seed"),
     supabase.from("matches").select("*, team_a:teams!team_a_id(name,tag,logo_url), team_b:teams!team_b_id(name,tag,logo_url), winner:teams!winner_id(name,tag)").eq("tournament_id", tournament.id).order("round").order("match_number"),
     supabase.from("v_tournament_standings").select("*").eq("tournament_id", tournament.id).order("position"),
-    supabase.auth.getUser().then(r => r.data),
+          supabase.auth.getUser(),
   ]);
   const statusColor: Record<string,string> = {
     open:"text-green-400", checkin:"text-blue-400", ongoing:"text-yellow-400",
