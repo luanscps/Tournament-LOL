@@ -101,8 +101,20 @@ export default async function AdminTorneioPorId({
       {/* Edit Form */}
       <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4">
         <h2 className="text-sm font-bold text-gray-400 mb-4">Editar Torneio</h2>
-        <TournamentForm tournament={t} />
+        <TournamentForm
+          mode="edit"
+          tournamentId={t.id}
+          defaultValues={{
+            name:        t.name        ?? "",
+            slug:        t.slug        ?? "",
+            description: t.description ?? "",
+            max_teams:   t.max_teams   ?? 16,
+            starts_at:   t.starts_at
+              ? new Date(t.starts_at).toISOString().slice(0, 16)
+              : "",
+            status:      t.status      ?? "draft",
+          }}
+        />
       </div>
-    </div>
   );
 }
