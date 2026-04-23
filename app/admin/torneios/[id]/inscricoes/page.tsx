@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { InscricaoRow } from "@/components/admin/InscricaoRow";
+import { ExportCsvButton } from "@/components/admin/ExportCsvButton";
 
 export default async function AdminInscricoes({
   params,
@@ -25,7 +26,10 @@ export default async function AdminInscricoes({
     .order("created_at", { ascending: true });
 
   const pendentes = (inscricoes ?? []).filter((i: any) => i.status === "pending");
-  const outras = (inscricoes ?? []).filter((i: any) => i.status !== "pending");
+  const aprovadas = (inscricoes ?? []).filter((i: any) => i.status === "approved");
+  const outras = (inscricoes ?? []).filter(
+    (i: any) => i.status !== "pending" && i.status !== "approved"
+  );
 
   function renderRow(i: any) {
     const cap = i.teams?.team_members?.find((m: any) => m.role === "captain");
@@ -47,9 +51,19 @@ export default async function AdminInscricoes({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-white">
-        Inscricoes - {torneio.name}
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-white">
+          Inscricoes - {torneio.name}
+        </h1>
+        <ExportCsvButton tournamentId={id} label="Exportar CSV" />
+      </div>
+
+      <div className="flex gap-4 text-sm text-gray-400">
+        <span>Total: {(inscricoes ?? []).length}</span>
+        <span className="text-yellow-400">Pendentes: {pendentes.length}</span>
+        <span className="text-green-400">Aprovadas: {aprovadas.length}</span>
+      </div>
+
       {pendentes.length > 0 && (
         <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 space-y-2">
           <h2 className="text-[#C8A84B] text-sm font-bold mb-3">
@@ -58,13 +72,27 @@ export default async function AdminInscricoes({
           {pendentes.map(renderRow)}
         </div>
       )}
+
+      {aprovadas.length > 0 && (
+        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 space-y-2">
+          <h2 className="text-green-400 text-sm font-bold mb-3">
+            Aprovadas ({aprovadas.length})
+          </h2>
+          {aprovadas.map(renderRow)}
+        </div>
+      )}
+
       {outras.length > 0 && (
         <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 space-y-2">
           <h2 className="text-gray-400 text-sm font-bold mb-3">
-            Processadas ({outras.length})
+            Outras ({outras.length})
           </h2>
           {outras.map(renderRow)}
         </div>
+      )}
+
+      {(inscricoes ?? []).length === 0 && (
+        <p className="text-gray-500 text-sm">Nenhuma inscricao encontrada.</p>
       )}
     </div>
   );
