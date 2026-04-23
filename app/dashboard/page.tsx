@@ -1,29 +1,52 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   if (!user) redirect("/login");
-  const [
-    { data: profile },
-    { data: playerData },
-    { data: myTeams },
-    { data: openTournaments },
-  ] = await Promise.all([
+
+  // Busca paralela: profile + torneios abertos (independentes entre si)
+  const [{ data: profile }, { data: openTournaments }] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", user.id).single(),
-    supabase.from("players").select("*").eq("profile_id", user.id).maybeSingle(),
-    supabase
-      .from("inscricoes")
-      .select("*, teams(id, name, tag), tournaments(id, name, slug, status)")
-      .eq("requested_by", user.id)  // ← coluna real
-      .limit(5)
     supabase
       .from("tournaments")
       .select("id, name, slug, status, max_teams, starts_at")
       .eq("status", "open")
       .limit(3),
   ]);
+
+  // Busca do player via conta Riot vinculada no profile
+  const { data: playerData } = profile?.riot_game_name
+    ? await supabase
+        .from("players")
+        .select("*")
+        .eq("summoner_name", profile.riot_game_name)
+        .eq("tag_line", profile.riot_tag_line ?? "BR1")
+        .maybeSingle()
+    : { data: null };
+
+  // Busca inscrições: prioriza team_id do player, fallback para requested_by
+  const { data: myTeams } = playerData?.team_id
+    ? await supabase
+        .from("inscricoes")
+        .select(
+          "id, status, team_id, tournament_id, teams:team_id(id, name, tag), tournaments:tournament_id(id, name, slug, status)"
+        )
+        .eq("team_id", playerData.team_id)
+        .limit(5)
+    : await supabase
+        .from("inscricoes")
+        .select(
+          "id, status, team_id, tournament_id, teams:team_id(id, name, tag), tournaments:tournament_id(id, name, slug, status)"
+        )
+        .eq("requested_by", user.id)
+        .limit(5);
 
   return (
     <div className="space-y-8">
@@ -32,10 +55,12 @@ export default async function DashboardPage() {
         <div className="w-20 h-20 rounded-full bg-[#1E3A5F] flex items-center justify-center text-3xl shrink-0">
           👤
         </div>
+
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white truncate">
             {profile?.full_name ?? profile?.email}
           </h1>
+
           {playerData ? (
             <p className="text-gray-400">
               {playerData.summoner_name}
@@ -50,6 +75,7 @@ export default async function DashboardPage() {
             </Link>
           )}
         </div>
+
         <Link
           href="/dashboard/jogador/registrar"
           className="btn-outline-gold text-sm text-center shrink-0"
@@ -66,20 +92,27 @@ export default async function DashboardPage() {
             + Explorar Torneios
           </Link>
         </div>
+
         {myTeams && myTeams.length > 0 ? (
           <div className="space-y-3">
             {myTeams.map((ins: any) => (
-              <div key={ins.id} className="bg-[#0A1628] rounded-lg p-3 flex items-center justify-between gap-4">
+              <div
+                key={ins.id}
+                className="bg-[#0A1628] rounded-lg p-3 flex items-center justify-between gap-4"
+              >
                 <div>
                   <p className="font-semibold text-white">
-                    {ins.teams?.tag ? `[${ins.teams.tag}] ` : ""} {ins.teams?.name}
+                    {ins.teams?.tag ? `[${ins.teams.tag}] ` : ""}
+                    {ins.teams?.name}
                   </p>
-                  <p className="text-gray-400 text-sm">
-                    {ins.tournaments?.name} &middot; {ins.role ?? "Jogador"}
-                  </p>
+                  <p className="text-gray-400 text-sm">{ins.tournaments?.name}</p>
                 </div>
+
                 {ins.tournaments?.slug && (
-                  <Link href={`/torneios/${ins.tournaments.slug}`} className="text-lol-gold hover:underline text-sm shrink-0">
+                  <Link
+                    href={`/torneios/${ins.tournaments.slug}`}
+                    className="text-lol-gold hover:underline text-sm shrink-0"
+                  >
                     Ver torneio &rarr;
                   </Link>
                 )}
@@ -87,7 +120,9 @@ export default async function DashboardPage() {
             ))}
           </div>
         ) : (
-          <p className="text-gray-400 text-sm">Voce ainda nao esta em nenhum time.</p>
+          <p className="text-gray-400 text-sm">
+            Voce ainda nao esta em nenhum time.
+          </p>
         )}
       </div>
 
@@ -100,17 +135,25 @@ export default async function DashboardPage() {
               Ver todos &rarr;
             </Link>
           </div>
+
           <div className="space-y-3">
             {openTournaments.map((t: any) => (
-              <div key={t.id} className="bg-[#0A1628] rounded-lg p-3 flex items-center justify-between gap-4">
+              <div
+                key={t.id}
+                className="bg-[#0A1628] rounded-lg p-3 flex items-center justify-between gap-4"
+              >
                 <p className="font-semibold text-white">{t.name}</p>
+
                 <div className="flex items-center gap-4 shrink-0">
                   {t.starts_at && (
                     <span className="text-gray-400 text-sm">
                       {new Date(t.starts_at).toLocaleDateString("pt-BR")}
                     </span>
                   )}
-                  <Link href={`/torneios/${t.slug}`} className="text-lol-gold hover:underline text-sm">
+                  <Link
+                    href={`/torneios/${t.slug}`}
+                    className="text-lol-gold hover:underline text-sm"
+                  >
                     Inscrever &rarr;
                   </Link>
                 </div>
