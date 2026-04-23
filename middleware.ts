@@ -1,12 +1,9 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+// middleware.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-  // Padrao oficial Supabase SSR para middleware
-  // IMPORTANTE: nao modificar a logica de supabaseResponse sem seguir as instrucoes abaixo
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,55 +11,58 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         getAll() {
-          return request.cookies.getAll();
+          return request.cookies.getAll()
         },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          // Passo 1: propagar cookies no request
+        setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
-          );
-          // Passo 2: recriar o response com o request atualizado
-          supabaseResponse = NextResponse.next({
-            request,
-          });
-          // Passo 3: propagar cookies no response
+          )
+          supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
-          );
+          )
         },
       },
     }
-  );
+  )
 
-  // IMPORTANTE: usar getUser() e nao getSession() para validar no servidor
-  // NAO remover este await - necessario para que o token seja atualizado
+  // IMPORTANTE: getUser() autentica o token com o servidor Supabase.
+  // Nunca use getSession() no middleware — tokens podem ser forjados no client.
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabase.auth.getUser()
 
-  const { pathname } = request.nextUrl;
-  const protectedPaths = ['/dashboard', '/admin'];
+  const { pathname } = request.nextUrl
 
-  // Redireciona usuario nao autenticado para login
-  if (protectedPaths.some((p) => pathname.startsWith(p)) && !user) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/login';
-    return NextResponse.redirect(redirectUrl);
+  // Rotas protegidas por autenticação simples
+  const isProtectedRoute =
+    pathname.startsWith('/dashboard') || pathname.startsWith('/admin')
+
+  if (isProtectedRoute && !user) {
+    const loginUrl = request.nextUrl.clone()
+    loginUrl.pathname = '/login'
+    loginUrl.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(loginUrl)
   }
 
-  // Redireciona usuario ja logado que tenta acessar /login ou /register
-  if ((pathname === '/login' || pathname === '/register') && user) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/dashboard';
-    return NextResponse.redirect(redirectUrl);
-  }
+  // Para /admin: a checagem de is_admin é feita no app/admin/layout.tsx
+  // (Server Component com acesso ao banco via createServerClient Node runtime).
+  // O middleware aqui só garante que o usuário está autenticado antes
+  // de chegar ao layout, evitando o custo de uma query SQL desnecessária
+  // em cada request de asset estático dentro do admin.
 
-  // IMPORTANTE: retornar supabaseResponse para que os cookies sejam propagados
-  return supabaseResponse;
+  return supabaseResponse
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/riot.*).*)',
+    /*
+     * Aplica middleware em todas as rotas exceto:
+     * - _next/static (arquivos estáticos)
+     * - _next/image (otimização de imagem)
+     * - favicon.ico
+     * - arquivos com extensão (png, jpg, svg, etc.)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
-};
+}
