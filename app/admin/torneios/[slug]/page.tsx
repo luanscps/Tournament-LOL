@@ -7,32 +7,32 @@ import { GenerateBracketButton } from "@/components/admin/GenerateBracketButton"
 export default async function AdminTorneioPorId({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ slug: string }>;
 }) {
-  const { id } = await params;
+  const { slug } = await params;
   const supabase = await createClient();
   const { data: t } = await supabase
     .from("tournaments")
     .select("*")
-    .eq("id", id)
+    .eq("id", slug)
     .single();
   if (!t) notFound();
 
   const { count: totalTeams } = await supabase
     .from("tournament_teams")
     .select("*", { count: "exact", head: true })
-    .eq("tournament_id", id);
+    .eq("tournament_id", slug);
 
   const { count: pendingTeams } = await supabase
     .from("tournament_teams")
     .select("*", { count: "exact", head: true })
-    .eq("tournament_id", id)
+    .eq("tournament_id", slug)
     .eq("status", "pending");
 
   const { count: approvedTeams } = await supabase
     .from("tournament_teams")
     .select("*", { count: "exact", head: true })
-    .eq("tournament_id", id)
+    .eq("tournament_id", slug)
     .eq("status", "approved");
 
   const STATUS_LABEL: Record<string, string> = {
@@ -54,13 +54,13 @@ export default async function AdminTorneioPorId({
         </div>
         <div className="flex gap-3">
           <Link
-            href={"/admin/torneios/" + id + "/inscricoes"}
+            href={"/admin/torneios/" + slug + "/inscricoes"}
             className="bg-[#1E3A5F] hover:bg-[#C8A84B]/20 text-white hover:text-[#C8A84B] text-sm px-3 py-1.5 rounded border border-[#1E3A5F] hover:border-[#C8A84B]/30 transition-colors"
           >
             Inscricoes {pendingTeams ? "(" + pendingTeams + " pendentes)" : ""}
           </Link>
           <Link
-            href={"/admin/torneios/" + id + "/partidas"}
+            href={"/admin/torneios/" + slug + "/partidas"}
             className="bg-[#1E3A5F] hover:bg-[#C8A84B]/20 text-white hover:text-[#C8A84B] text-sm px-3 py-1.5 rounded border border-[#1E3A5F] hover:border-[#C8A84B]/30 transition-colors"
           >
             Partidas
@@ -92,7 +92,7 @@ export default async function AdminTorneioPorId({
       <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4">
         <h2 className="text-sm font-bold text-[#C8A84B] mb-3">Gerenciar Bracket</h2>
         <GenerateBracketButton
-          tournamentId={id}
+          tournamentId={slug}
           approvedTeams={approvedTeams ?? 0}
           currentStatus={t.status}
         />

@@ -5,14 +5,14 @@ import { PartidaResultForm } from "@/components/admin/PartidaResultForm";
 export default async function AdminPartidas({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ slug: string }>;
 }) {
-  const { id } = await params;
+  const { slug } = await params;
   const supabase = await createClient();
   const { data: torneio } = await supabase
     .from("tournaments")
     .select("id,name")
-    .eq("id", id)
+    .eq("id", slug)
     .single();
   if (!torneio) notFound();
 
@@ -21,7 +21,7 @@ export default async function AdminPartidas({
     .select(
       "id, status, winner_team_id, score_a, score_b, team_a:teams!matches_team_a_id_fkey(id,name), team_b:teams!matches_team_b_id_fkey(id,name)"
     )
-    .eq("tournament_id", id)
+    .eq("tournament_id", slug)
     .order("created_at", { ascending: true });
 
   const pendentes = (partidas ?? []).filter((p: any) => p.status !== "finished");
@@ -39,7 +39,7 @@ export default async function AdminPartidas({
             <PartidaResultForm
               key={p.id}
               matchId={p.id}
-              tournamentId={id}
+              tournamentId={slug}
               teamAId={p.team_a.id}
               teamAName={p.team_a.name}
               teamBId={p.team_b.id}

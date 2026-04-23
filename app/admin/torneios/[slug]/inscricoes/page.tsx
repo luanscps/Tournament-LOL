@@ -6,14 +6,14 @@ import { ExportCsvButton } from "@/components/admin/ExportCsvButton";
 export default async function AdminInscricoes({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ slug: string }>;
 }) {
-  const { id } = await params;
+  const { slug } = await params;
   const supabase = await createClient();
   const { data: torneio } = await supabase
     .from("tournaments")
     .select("id,name")
-    .eq("id", id)
+    .eq("id", slug)
     .single();
   if (!torneio) notFound();
 
@@ -22,7 +22,7 @@ export default async function AdminInscricoes({
     .select(
       "status, teams(id, name, tag, team_members(profiles(display_name, username), role))"
     )
-    .eq("tournament_id", id)
+    .eq("tournament_id", slug)
     .order("created_at", { ascending: true });
 
   const pendentes = (inscricoes ?? []).filter((i: any) => i.status === "pending");
@@ -37,7 +37,7 @@ export default async function AdminInscricoes({
       <InscricaoRow
         key={i.teams?.id}
         teamId={i.teams?.id}
-        tournamentId={id}
+        tournamentId={slug}
         teamName={i.teams?.name}
         teamTag={i.teams?.tag}
         status={i.status}
@@ -55,7 +55,7 @@ export default async function AdminInscricoes({
         <h1 className="text-xl font-bold text-white">
           Inscricoes - {torneio.name}
         </h1>
-        <ExportCsvButton tournamentId={id} label="Exportar CSV" />
+        <ExportCsvButton tournamentId={slug} label="Exportar CSV" />
       </div>
 
       <div className="flex gap-4 text-sm text-gray-400">
