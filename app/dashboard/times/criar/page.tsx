@@ -3,13 +3,21 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+interface RiotAccount {
+  id: string;
+  game_name: string;
+  tag_line: string;
+  summoner_level: number;
+  profile_icon_id: number;
+}
+
 export default function CriarTimePage() {
-  const [nome, setNome]       = useState("");
-  const [tag, setTag]         = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [checking, setChecking] = useState(true);
-  const [hasAccount, setHasAccount] = useState(false);
+  const [nome, setNome]               = useState("");
+  const [tag, setTag]                 = useState("");
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState("");
+  const [checking, setChecking]       = useState(true);
+  const [account, setAccount]         = useState<RiotAccount | null>(null);
 
   const router       = useRouter();
   const searchParams = useSearchParams();
@@ -21,14 +29,15 @@ export default function CriarTimePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      const { data } = await supabase
+      // Busca conta Riot vinculada
+      const { data: acct } = await supabase
         .from("riot_accounts")
-        .select("id")
+        .select("id, game_name, tag_line, summoner_level, profile_icon_id")
         .eq("profile_id", user.id)
         .eq("is_primary", true)
         .single();
 
-      setHasAccount(!!data);
+      setAccount(acct ?? null);
       setChecking(false);
     }
     checkAccount();
@@ -36,6 +45,7 @@ export default function CriarTimePage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!account) return;
     setLoading(true);
     setError("");
 
@@ -43,16 +53,36 @@ export default function CriarTimePage() {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) { router.push("/login"); return; }
 
-      // Verifica se usuário já tem time
-      const { data: existing } = await supabase
-        .from("team_members")
-        .select("team_id")
-        .eq("profile_id", user.id)
-        .eq("status", "active")
+      if (!tournamentId) {
+        setError("Nenhum torneio selecionado. Acesse esta página a partir de um torneio.");
+        setLoading(false);
+        return;
+      }
+
+      // Verifica se já tem time neste torneio
+      const { data: existingTeam } = await supabase
+        .from("teams")
+        .select("id, name")
+        .eq("tournament_id", tournamentId)
+        .eq("owner_id", user.id)
         .single();
 
-      if (existing) {
-        setError("Você já faz parte de um time ativo. Saia do time atual antes de criar um novo.");
+      if (existingTeam) {
+        setError(`Você já criou o time "${existingTeam.name}" neste torneio.`);
+        setLoading(false);
+        return;
+      }
+
+      // Verifica se já é player em algum time deste torneio
+      const { data: existingPlayer } = await supabase
+        .from("players")
+        .select("id, team_id")
+        .eq("puuid", account.id) // usa puuid via riot_accounts
+        .not("team_id", "is", null)
+        .single();
+
+      if (existingPlayer) {
+        setError("Você já está em um time neste torneio.");
         setLoading(false);
         return;
       }
@@ -61,42 +91,53 @@ export default function CriarTimePage() {
       const { data: team, error: teamError } = await supabase
         .from("teams")
         .insert({
-          name:       nome.trim(),
-          tag:        tag.trim().toUpperCase(),
-          captain_id: user.id,
+          tournament_id: tournamentId,
+          name:          nome.trim(),
+          tag:           tag.trim().toUpperCase(),
+          owner_id:      user.id,
         })
         .select()
         .single();
 
       if (teamError) throw new Error(teamError.message);
 
-      // Adiciona o criador como capitão
-      const { error: memberError } = await supabase
-        .from("team_members")
-        .insert({
-          team_id:    team.id,
-          profile_id: user.id,
-          role:       "captain",
-          status:     "active",
-        });
+      // Adiciona o capitão como player do time
+      const soloEntry = account
+        ? {
+            team_id:        team.id,
+            summoner_name:  account.game_name,
+            tag_line:       account.tag_line,
+            tier:           "UNRANKED",
+            rank:           "",
+            lp:             0,
+            wins:           0,
+            losses:         0,
+            role:           "TOP", // padrão — jogador pode editar depois
+            profile_icon:   account.profile_icon_id,
+            summoner_level: account.summoner_level,
+          }
+        : null;
 
-      if (memberError) throw new Error(memberError.message);
-
-      // Se veio de um torneio, inscreve o time automaticamente
-      if (tournamentId) {
-        const { error: regError } = await supabase
-          .from("tournament_registrations")
-          .insert({
-            tournament_id: tournamentId,
-            team_id:       team.id,
-            status:        "pending",
-          });
-        if (regError) console.warn("Inscrição automática falhou:", regError.message);
-        router.push(`/torneios/${tournamentId}?inscrito=true`);
-        return;
+      if (soloEntry) {
+        const { error: playerError } = await supabase
+          .from("players")
+          .insert(soloEntry);
+        if (playerError) console.warn("Erro ao adicionar capitão como player:", playerError.message);
       }
 
-      router.push("/dashboard/time/" + team.id);
+      // Inscreve o time no torneio
+      const { error: inscError } = await supabase
+        .from("inscricoes")
+        .insert({
+          tournament_id: tournamentId,
+          team_id:       team.id,
+          requested_by:  user.id,
+          // status usa o enum do banco — não passa valor, usa o default
+        });
+
+      if (inscError) throw new Error("Time criado, mas inscrição falhou: " + inscError.message);
+
+      router.push(`/torneios/${tournamentId}?inscrito=true`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erro ao criar time");
     } finally {
@@ -112,7 +153,7 @@ export default function CriarTimePage() {
     );
   }
 
-  if (!hasAccount) {
+  if (!account) {
     return (
       <div className="max-w-lg mx-auto card-lol text-center py-12 space-y-4">
         <p className="text-4xl">⚠️</p>
@@ -120,10 +161,7 @@ export default function CriarTimePage() {
         <p className="text-gray-400 text-sm">
           Para criar um time você precisa primeiro vincular sua conta Riot.
         </p>
-        <a
-          href="/dashboard/jogador/registrar"
-          className="btn-gold inline-block px-6 py-2"
-        >
+        <a href="/dashboard/jogador/registrar" className="btn-gold inline-block px-6 py-2">
           Vincular Conta Riot
         </a>
       </div>
@@ -137,10 +175,24 @@ export default function CriarTimePage() {
       {tournamentId && (
         <div className="bg-[#C8A84B]/10 border border-[#C8A84B]/30 rounded-lg p-3">
           <p className="text-[#C8A84B] text-sm">
-            🏆 Após criar o time, você será inscrito automaticamente no torneio.
+            🏆 Após criar o time, ele será inscrito automaticamente no torneio.
           </p>
         </div>
       )}
+
+      {/* Conta vinculada */}
+      <div className="card-lol flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-[#0A1428] border border-[#1E3A5F] flex items-center justify-center text-lg">
+          👤
+        </div>
+        <div>
+          <p className="text-white font-medium text-sm">
+            {account.game_name}
+            <span className="text-gray-500">#{account.tag_line}</span>
+          </p>
+          <p className="text-gray-500 text-xs">Nível {account.summoner_level} · Conta vinculada ✅</p>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="card-lol space-y-4">
         <div>
@@ -155,7 +207,7 @@ export default function CriarTimePage() {
             maxLength={32}
             required
           />
-          <p className="text-gray-600 text-xs mt-1">{nome.length}/32 caracteres</p>
+          <p className="text-gray-600 text-xs mt-1">{nome.length}/32</p>
         </div>
 
         <div>
@@ -171,7 +223,7 @@ export default function CriarTimePage() {
             minLength={2}
             required
           />
-          <p className="text-gray-600 text-xs mt-1">2–5 letras, exibida como [TAG]</p>
+          <p className="text-gray-600 text-xs mt-1">2–5 letras · exibida como [TAG]</p>
         </div>
 
         {error && (
@@ -190,10 +242,10 @@ export default function CriarTimePage() {
           </button>
           <button
             type="submit"
-            disabled={loading || !nome.trim() || !tag.trim()}
+            disabled={loading || !nome.trim() || tag.trim().length < 2}
             className="btn-gold flex-1 py-3"
           >
-            {loading ? "Criando..." : "Criar Time"}
+            {loading ? "Criando..." : "Criar e Inscrever Time"}
           </button>
         </div>
       </form>
