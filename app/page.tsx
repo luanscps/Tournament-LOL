@@ -1,15 +1,29 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { TournamentCard } from "@/components/tournament/TournamentCard";
+
 export default async function HomePage() {
   const supabase = await createClient();
+
   const { data: tournaments } = await supabase
-    .from("tournaments").select("*")
-    .in("status", ["open","checkin","ongoing"])
-    .order("starts_at", { ascending: true }).limit(6);
-  const { count: totalPlayers } = await supabase.from("riot_accounts").select("*", { count: "exact", head: true });
-  const { count: totalTeams }   = await supabase.from("teams").select("*", { count: "exact", head: true });
-  const { count: totalT }       = await supabase.from("tournaments").select("*", { count: "exact", head: true });
+    .from("tournaments")
+    .select("*")
+    .in("status", ["open", "checkin", "ongoing"])
+    .order("start_date", { ascending: true }) // ← corrigido: era starts_at
+    .limit(6);
+
+  const { count: totalPlayers } = await supabase
+    .from("riot_accounts")
+    .select("*", { count: "exact", head: true });
+
+  const { count: totalTeams } = await supabase
+    .from("teams")
+    .select("*", { count: "exact", head: true });
+
+  const { count: totalT } = await supabase
+    .from("tournaments")
+    .select("*", { count: "exact", head: true });
+
   return (
     <div className="space-y-16">
       <section className="relative rounded-2xl overflow-hidden min-h-[380px] flex items-center">
@@ -52,10 +66,10 @@ export default async function HomePage() {
         <h2 className="text-2xl font-bold text-white mb-8 text-center">Como funciona</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {[
-            { step:"01", title:"Cadastre-se",  desc:"Crie sua conta e vincule seu Riot ID.", icon:"👤" },
-            { step:"02", title:"Monte seu Time",desc:"Crie time 5v5 e convide seus amigos.",  icon:"🛡️" },
-            { step:"03", title:"Inscreva-se",   desc:"Encontre torneio aberto e inscreva.",   icon:"📋" },
-            { step:"04", title:"Dispute",        desc:"Jogue, reporte resultados e veja o bracket.", icon:"⚔️" },
+            { step:"01", title:"Cadastre-se",   desc:"Crie sua conta e vincule seu Riot ID.", icon:"👤" },
+            { step:"02", title:"Monte seu Time", desc:"Crie time 5v5 e convide seus amigos.",  icon:"🛡️" },
+            { step:"03", title:"Inscreva-se",    desc:"Encontre torneio aberto e inscreva.",   icon:"📋" },
+            { step:"04", title:"Dispute",         desc:"Jogue, reporte resultados e veja o bracket.", icon:"⚔️" },
           ].map(i => (
             <div key={i.step} className="card-lol text-center">
               <p className="text-4xl mb-3">{i.icon}</p>
