@@ -1,4 +1,4 @@
-// @ts-nocheck
+// supabase/functions/discord-webhook/index.ts
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -7,17 +7,17 @@ const corsHeaders = {
 }
 
 const TIER_COLORS: Record<string, number> = {
-  CHALLENGER:   0xffd700,
-  GRANDMASTER:  0xff4500,
-  MASTER:       0x9b59b6,
-  DIAMOND:      0x3498db,
-  EMERALD:      0x2ecc71,
-  PLATINUM:     0x1abc9c,
-  GOLD:         0xf1c40f,
-  SILVER:       0x95a5a6,
-  BRONZE:       0xcd6133,
-  IRON:         0x7f8c8d,
-  UNRANKED:     0x99aab5,
+  CHALLENGER:  0xffd700,
+  GRANDMASTER: 0xff4500,
+  MASTER:      0x9b59b6,
+  DIAMOND:     0x3498db,
+  EMERALD:     0x2ecc71,
+  PLATINUM:    0x1abc9c,
+  GOLD:        0xf1c40f,
+  SILVER:      0x95a5a6,
+  BRONZE:      0xcd6133,
+  IRON:        0x7f8c8d,
+  UNRANKED:    0x99aab5,
 }
 
 async function sendDiscordWebhook(webhookUrl: string, payload: object) {
@@ -32,86 +32,59 @@ async function sendDiscordWebhook(webhookUrl: string, payload: object) {
   }
 }
 
-function buildEmbed(type: string, data: any): object[] {
-  const embeds: any[] = []
+function buildEmbed(type: string, data: Record<string, unknown>): object[] {
   const ts = new Date().toISOString()
+  const footer = { text: 'BRLOL Torneios' }
 
   switch (type) {
     case 'inscricao_aprovada':
-      embeds.push({
-        title: '✅ Time Aprovado!',
+      return [{ title: '✅ Time Aprovado!',
         description: `**${data.team_name}** foi aprovado no torneio **${data.tournament_name}**!`,
-        color: 0x2ecc71,
-        timestamp: ts,
-        footer: { text: 'BRLOL Torneios' },
-      })
-      break
+        color: 0x2ecc71, timestamp: ts, footer }]
 
     case 'inscricao_rejeitada':
-      embeds.push({
-        title: '❌ Inscrição Rejeitada',
+      return [{ title: '❌ Inscrição Rejeitada',
         description: `**${data.team_name}** não foi aprovado no torneio **${data.tournament_name}**.`,
-        color: 0xe74c3c,
-        timestamp: ts,
-        footer: { text: 'BRLOL Torneios' },
-      })
-      break
+        color: 0xe74c3c, timestamp: ts, footer }]
 
     case 'partida_iniciada':
-      embeds.push({
-        title: '⚔️ Partida em Andamento!',
+      return [{ title: '⚔️ Partida em Andamento!',
         description: `**${data.team_a}** vs **${data.team_b}**`,
         color: 0xf1c40f,
         fields: [
-          { name: 'Torneio', value: data.tournament_name, inline: true },
-          { name: 'Formato', value: data.format,          inline: true },
-          { name: 'Rodada',  value: `Rodada ${data.round}`, inline: true },
+          { name: 'Torneio', value: String(data.tournament_name), inline: true },
+          { name: 'Formato', value: String(data.format ?? 'BO1'), inline: true },
+          { name: 'Rodada',  value: `Rodada ${data.round ?? '?'}`, inline: true },
         ],
-        timestamp: ts,
-        footer: { text: 'BRLOL Torneios' },
-      })
-      break
+        timestamp: ts, footer }]
 
     case 'partida_finalizada':
-      embeds.push({
-        title: '🏆 Partida Encerrada',
+      return [{ title: '🏆 Partida Encerrada',
         description: `**${data.team_a}** ${data.score_a} — ${data.score_b} **${data.team_b}**`,
         color: 0x7289da,
         fields: [
-          { name: 'Vencedor',  value: data.winner,          inline: true },
-          { name: 'Torneio',   value: data.tournament_name, inline: true },
-          { name: 'Formato',   value: data.format,          inline: true },
-          ...(data.mvp ? [{ name: 'MVP', value: data.mvp, inline: true }] : []),
+          { name: 'Vencedor',  value: String(data.winner),          inline: true },
+          { name: 'Torneio',   value: String(data.tournament_name), inline: true },
+          { name: 'Formato',   value: String(data.format ?? 'BO1'), inline: true },
+          ...(data.mvp ? [{ name: 'MVP', value: String(data.mvp), inline: true }] : []),
         ],
-        timestamp: ts,
-        footer: { text: 'BRLOL Torneios' },
-      })
-      break
+        timestamp: ts, footer }]
 
     case 'torneio_iniciado':
-      embeds.push({
-        title: '🎉 Torneio Iniciado!',
+      return [{ title: '🎉 Torneio Iniciado!',
         description: `O torneio **${data.tournament_name}** começou!`,
         color: 0x3498db,
         fields: [
-          { name: 'Times',    value: `${data.team_count} times`, inline: true },
-          { name: 'Formato',  value: data.bracket_type,          inline: true },
+          { name: 'Times',   value: `${data.team_count} times`, inline: true },
+          { name: 'Formato', value: String(data.bracket_type),  inline: true },
         ],
-        timestamp: ts,
-        footer: { text: 'BRLOL Torneios' },
-      })
-      break
+        timestamp: ts, footer }]
 
     default:
-      embeds.push({
-        title: '📢 Notificação BRLOL',
+      return [{ title: '📢 Notificação BRLOL',
         description: JSON.stringify(data).slice(0, 200),
-        color: 0x99aab5,
-        timestamp: ts,
-      })
+        color: 0x99aab5, timestamp: ts, footer }]
   }
-
-  return embeds
 }
 
 Deno.serve(async (req) => {
@@ -120,39 +93,56 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { type, tournament_id, data } = await req.json()
+    const body = await req.json()
+    const { type, tournament_id, data } = body
+
+    if (!type || !data) {
+      return new Response(
+        JSON.stringify({ error: 'Payload inválido: type e data são obrigatórios.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // Buscar webhook URL do torneio
-    const { data: tournament } = await supabase
-      .from('tournaments')
-      .select('discord_webhook_url, name')
-      .eq('id', tournament_id)
-      .single()
+    // Buscar webhook do torneio (se tournament_id fornecido)
+    let webhookUrl: string | null = null
+    let tournamentName: string = data.tournament_name ?? ''
 
-    if (!tournament?.discord_webhook_url) {
+    if (tournament_id) {
+      const { data: tournament } = await supabase
+        .from('tournaments')
+        .select('discord_webhook_url, name')
+        .eq('id', tournament_id)
+        .single()
+
+      webhookUrl = tournament?.discord_webhook_url ?? null
+      tournamentName = tournament?.name ?? tournamentName
+    }
+
+    if (!webhookUrl) {
       return new Response(
-        JSON.stringify({ skipped: true, reason: 'Sem webhook configurado' }),
+        JSON.stringify({ skipped: true, reason: 'Sem webhook configurado para este torneio.' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const embeds = buildEmbed(type, { ...data, tournament_name: tournament.name })
-
-    await sendDiscordWebhook(tournament.discord_webhook_url, { embeds })
+    const embeds = buildEmbed(type, { ...data, tournament_name: tournamentName })
+    await sendDiscordWebhook(webhookUrl, { embeds })
 
     return new Response(
       JSON.stringify({ success: true, type }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+    console.error('[discord-webhook]', msg)
+    return new Response(
+      JSON.stringify({ error: msg }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
   }
 })

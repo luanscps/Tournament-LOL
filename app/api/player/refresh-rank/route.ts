@@ -1,10 +1,8 @@
-// middleware.ts
+// app/api/player/refresh-rank/route.ts
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
+export async function POST(request: NextRequest) {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -12,39 +10,30 @@ export async function middleware(request: NextRequest) {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (cookiesToSet: { name: string; value: string; options?: object }[]) => {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
           )
         },
       },
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  const pathname = request.nextUrl.pathname
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-  // Redireciona anônimos para /login
-  const protectedRoutes = ['/dashboard', '/admin', '/torneios/inscrever']
-  const isProtected = protectedRoutes.some((r) => pathname.startsWith(r))
-
-  if (isProtected && !user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('redirectTo', pathname)
-    return NextResponse.redirect(url)
+  if (!user || authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Para /admin, a checagem real de is_admin é feita no layout.tsx (Server Component)
-  // O middleware apenas garante que o usuário está logado.
-  // Isso evita queries extras no edge runtime que tem limitações de latência.
+  const body = await request.json()
+  const { playerId } = body
 
-  return supabaseResponse
-}
+  if (!playerId) {
+    return NextResponse.json({ error: 'playerId is required' }, { status: 400 })
+  }
 
-export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  // TODO: lógica de refresh de rank via Riot API
+  // const rankData = await fetchRiotRank(playerId)
+  // await supabase.from('players').update({ rank: rankData }).eq('id', playerId)
+
+  return NextResponse.json({ success: true, playerId })
 }
