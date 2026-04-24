@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -12,16 +12,16 @@ interface RiotAccount {
 }
 
 export default function CriarTimePage() {
-  const [nome, setNome]               = useState("");
-  const [tag, setTag]                 = useState("");
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState("");
-  const [checking, setChecking]       = useState(true);
-  const [account, setAccount]         = useState<RiotAccount | null>(null);
+  const [nome, setNome]         = useState("");
+  const [tag, setTag]           = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [checking, setChecking] = useState(true);
+  const [account, setAccount]   = useState<RiotAccount | null>(null);
 
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const supabase     = createClient();
+  const supabase     = useMemo(() => createClient(), []);
   const tournamentId = searchParams.get("tournament");
 
   useEffect(() => {
@@ -29,7 +29,6 @@ export default function CriarTimePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      // Busca conta Riot vinculada
       const { data: acct } = await supabase
         .from("riot_accounts")
         .select("id, game_name, tag_line, summoner_level, profile_icon_id")
@@ -41,7 +40,7 @@ export default function CriarTimePage() {
       setChecking(false);
     }
     checkAccount();
-  }, []);
+  }, [supabase, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +64,7 @@ export default function CriarTimePage() {
         .select("id, name")
         .eq("tournament_id", tournamentId)
         .eq("owner_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (existingTeam) {
         setError(`Você já criou o time "${existingTeam.name}" neste torneio.`);
@@ -73,13 +72,14 @@ export default function CriarTimePage() {
         return;
       }
 
-      // Verifica se já é player em algum time deste torneio
+      // Verifica se já é player em algum time
       const { data: existingPlayer } = await supabase
         .from("players")
         .select("id, team_id")
-        .eq("puuid", account.id) // usa puuid via riot_accounts
+        .eq("summoner_name", account.game_name)
+        .eq("tag_line", account.tag_line)
         .not("team_id", "is", null)
-        .single();
+        .maybeSingle();
 
       if (existingPlayer) {
         setError("Você já está em um time neste torneio.");
@@ -102,27 +102,24 @@ export default function CriarTimePage() {
       if (teamError) throw new Error(teamError.message);
 
       // Adiciona o capitão como player do time
-      const soloEntry = account
-        ? {
-            team_id:        team.id,
-            summoner_name:  account.game_name,
-            tag_line:       account.tag_line,
-            tier:           "UNRANKED",
-            rank:           "",
-            lp:             0,
-            wins:           0,
-            losses:         0,
-            role:           "TOP", // padrão — jogador pode editar depois
-            profile_icon:   account.profile_icon_id,
-            summoner_level: account.summoner_level,
-          }
-        : null;
+      const { error: playerError } = await supabase
+        .from("players")
+        .insert({
+          team_id:        team.id,
+          summoner_name:  account.game_name,
+          tag_line:       account.tag_line,
+          tier:           "UNRANKED",
+          rank:           "",
+          lp:             0,
+          wins:           0,
+          losses:         0,
+          role:           "TOP",
+          profile_icon:   account.profile_icon_id,
+          summoner_level: account.summoner_level,
+        });
 
-      if (soloEntry) {
-        const { error: playerError } = await supabase
-          .from("players")
-          .insert(soloEntry);
-        if (playerError) console.warn("Erro ao adicionar capitão como player:", playerError.message);
+      if (playerError) {
+        console.warn("Erro ao adicionar capitão como player:", playerError.message);
       }
 
       // Inscreve o time no torneio
@@ -132,7 +129,7 @@ export default function CriarTimePage() {
           tournament_id: tournamentId,
           team_id:       team.id,
           requested_by:  user.id,
-          // status usa o enum do banco — não passa valor, usa o default
+          status:        "PENDING",
         });
 
       if (inscError) throw new Error("Time criado, mas inscrição falhou: " + inscError.message);
@@ -190,7 +187,9 @@ export default function CriarTimePage() {
             {account.game_name}
             <span className="text-gray-500">#{account.tag_line}</span>
           </p>
-          <p className="text-gray-500 text-xs">Nível {account.summoner_level} · Conta vinculada ✅</p>
+          <p className="text-gray-500 text-xs">
+            Nível {account.summoner_level} · Conta vinculada ✅
+          </p>
         </div>
       </div>
 
