@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { getQueueLabel } from "@/lib/utils";
+
 interface Tournament {
   id: string; slug: string; name: string; description?: string;
   status: string; max_teams: number; queue_type: string;
-  bracket_type: string; prize_pool?: string; starts_at?: string;
+  bracket_type: string; prize_pool?: string;
+  starts_at?: string;
+  start_date?: string;
 }
+
 const STATUS_CONFIG: Record<string,{ label:string; color:string; dot:string }> = {
   open:      { label:"Inscricoes Abertas", color:"text-green-400",  dot:"bg-green-400" },
   checkin:   { label:"Check-in",           color:"text-blue-400",   dot:"bg-blue-400" },
@@ -13,8 +17,12 @@ const STATUS_CONFIG: Record<string,{ label:string; color:string; dot:string }> =
   draft:     { label:"Em breve",            color:"text-gray-500",   dot:"bg-gray-600" },
   cancelled: { label:"Cancelado",           color:"text-red-400",    dot:"bg-red-400" },
 };
+
 export function TournamentCard({ tournament: t }: { tournament: Tournament }) {
-  const s = STATUS_CONFIG[t.status] ?? STATUS_CONFIG.draft;
+  const statusKey = t.status?.toLowerCase() ?? "draft";
+  const s = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG.draft;
+  const dateStr = t.starts_at || t.start_date;
+
   return (
     <Link href={"/torneios/" + t.slug}
       className="card-lol block hover:border-[#C8A84B]/50 transition-colors group">
@@ -33,7 +41,11 @@ export function TournamentCard({ tournament: t }: { tournament: Tournament }) {
         <span className="text-gray-500 text-xs">🛡️ Ate {t.max_teams} times</span>
         <div className="flex items-center gap-3">
           {t.prize_pool && <span className="text-[#C8A84B] text-xs font-bold">🏆 {t.prize_pool}</span>}
-          {t.starts_at && <span className="text-gray-500 text-xs">{new Date(t.starts_at).toLocaleDateString("pt-BR")}</span>}
+          {dateStr && (
+            <span className="text-gray-500 text-xs">
+              {new Date(dateStr).toLocaleDateString("pt-BR")}
+            </span>
+          )}
         </div>
       </div>
     </Link>
