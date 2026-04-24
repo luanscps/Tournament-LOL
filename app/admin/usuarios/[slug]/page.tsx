@@ -20,7 +20,6 @@ export default async function AdminUsuarioDetailPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  // slug aqui ainda é o UUID do profile (busca segura por id)
   const { slug } = await params;
   const user = await getUsuario(slug);
   if (!user) return notFound();
@@ -73,7 +72,13 @@ export default async function AdminUsuarioDetailPage({
         </div>
       </div>
 
-      <UserPermissionsForm userId={user.id} isAdmin={user.is_admin} isBanned={user.is_banned} />
+      {/* FIX: adicionado displayName que é required na interface Props */}
+      <UserPermissionsForm
+        userId={user.id}
+        isAdmin={user.is_admin}
+        isBanned={user.is_banned}
+        displayName={user.full_name || user.email}
+      />
 
       <div className="mt-6">
         <Link href="/admin/usuarios" className="text-gray-400 hover:text-white text-sm">
