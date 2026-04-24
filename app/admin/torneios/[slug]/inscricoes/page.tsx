@@ -10,24 +10,28 @@ export default async function AdminInscricoes({
 }) {
   const { slug } = await params;
   const supabase = await createClient();
+
+  // FASE 2: resolve pelo slug real da coluna tournaments.slug
   const { data: torneio } = await supabase
     .from("tournaments")
-    .select("id,name")
-    .eq("id", slug)
+    .select("id, name, slug")
+    .eq("slug", slug)
     .single();
   if (!torneio) notFound();
+
+  const tournamentId = torneio.id;
 
   const { data: inscricoes } = await supabase
     .from("tournament_teams")
     .select(
       "status, teams(id, name, tag, team_members(profiles(display_name, username), role))"
     )
-    .eq("tournament_id", slug)
+    .eq("tournament_id", tournamentId)
     .order("created_at", { ascending: true });
 
   const pendentes = (inscricoes ?? []).filter((i: any) => i.status === "pending");
   const aprovadas = (inscricoes ?? []).filter((i: any) => i.status === "approved");
-  const outras = (inscricoes ?? []).filter(
+  const outras    = (inscricoes ?? []).filter(
     (i: any) => i.status !== "pending" && i.status !== "approved"
   );
 
@@ -37,7 +41,7 @@ export default async function AdminInscricoes({
       <InscricaoRow
         key={i.teams?.id}
         teamId={i.teams?.id}
-        tournamentId={slug}
+        tournamentId={tournamentId}
         teamName={i.teams?.name}
         teamTag={i.teams?.tag}
         status={i.status}
@@ -52,10 +56,18 @@ export default async function AdminInscricoes({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">
-          Inscricoes - {torneio.name}
-        </h1>
-        <ExportCsvButton tournamentId={slug} label="Exportar CSV" />
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <a href={`/admin/torneios/${slug}`} className="text-gray-400 hover:text-white text-sm">
+              ← {torneio.name}
+            </a>
+          </div>
+          <h1 className="text-xl font-bold text-white">
+            Inscricoes — {torneio.name}
+          </h1>
+        </div>
+        {/* ExportCsvButton passa tournamentId (UUID) para a API */}
+        <ExportCsvButton tournamentId={tournamentId} label="Exportar CSV" />
       </div>
 
       <div className="flex gap-4 text-sm text-gray-400">

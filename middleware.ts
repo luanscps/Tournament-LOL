@@ -1,6 +1,6 @@
 // middleware.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -10,13 +10,9 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet: { name: string; value: string; options?: object }[]) => {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -26,43 +22,29 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANTE: getUser() autentica o token com o servidor Supabase.
-  // Nunca use getSession() no middleware — tokens podem ser forjados no client.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+  const pathname = request.nextUrl.pathname
 
-  const { pathname } = request.nextUrl
+  // Redireciona anônimos para /login
+  const protectedRoutes = ['/dashboard', '/admin', '/torneios/inscrever']
+  const isProtected = protectedRoutes.some((r) => pathname.startsWith(r))
 
-  // Rotas protegidas por autenticação simples
-  const isProtectedRoute =
-    pathname.startsWith('/dashboard') || pathname.startsWith('/admin')
-
-  if (isProtectedRoute && !user) {
-    const loginUrl = request.nextUrl.clone()
-    loginUrl.pathname = '/login'
-    loginUrl.searchParams.set('redirectTo', pathname)
-    return NextResponse.redirect(loginUrl)
+  if (isProtected && !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(url)
   }
 
-  // Para /admin: a checagem de is_admin é feita no app/admin/layout.tsx
-  // (Server Component com acesso ao banco via createServerClient Node runtime).
-  // O middleware aqui só garante que o usuário está autenticado antes
-  // de chegar ao layout, evitando o custo de uma query SQL desnecessária
-  // em cada request de asset estático dentro do admin.
+  // Para /admin, a checagem real de is_admin é feita no layout.tsx (Server Component)
+  // O middleware apenas garante que o usuário está logado.
+  // Isso evita queries extras no edge runtime que tem limitações de latência.
 
   return supabaseResponse
 }
 
 export const config = {
   matcher: [
-    /*
-     * Aplica middleware em todas as rotas exceto:
-     * - _next/static (arquivos estáticos)
-     * - _next/image (otimização de imagem)
-     * - favicon.ico
-     * - arquivos com extensão (png, jpg, svg, etc.)
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

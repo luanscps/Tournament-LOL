@@ -4,42 +4,47 @@ import Link from "next/link";
 import { TournamentForm } from "@/components/admin/TournamentForm";
 import { GenerateBracketButton } from "@/components/admin/GenerateBracketButton";
 
-export default async function AdminTorneioPorId({
+export default async function AdminTorneioPorSlug({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
   const supabase = await createClient();
+
+  // FASE 2: resolve torneio pelo slug real (coluna tournaments.slug)
   const { data: t } = await supabase
     .from("tournaments")
     .select("*")
-    .eq("id", slug)
+    .eq("slug", slug)
     .single();
   if (!t) notFound();
+
+  // A partir daqui SEMPRE usa t.id nas queries relacionais
+  const tournamentId = t.id;
 
   const { count: totalTeams } = await supabase
     .from("tournament_teams")
     .select("*", { count: "exact", head: true })
-    .eq("tournament_id", slug);
+    .eq("tournament_id", tournamentId);
 
   const { count: pendingTeams } = await supabase
     .from("tournament_teams")
     .select("*", { count: "exact", head: true })
-    .eq("tournament_id", slug)
+    .eq("tournament_id", tournamentId)
     .eq("status", "pending");
 
   const { count: approvedTeams } = await supabase
     .from("tournament_teams")
     .select("*", { count: "exact", head: true })
-    .eq("tournament_id", slug)
+    .eq("tournament_id", tournamentId)
     .eq("status", "approved");
 
   const STATUS_LABEL: Record<string, string> = {
-    draft: "Rascunho",
-    open: "Aberto",
-    checkin: "Check-in",
-    ongoing: "Em andamento",
+    draft:    "Rascunho",
+    open:     "Aberto",
+    checkin:  "Check-in",
+    ongoing:  "Em andamento",
     finished: "Finalizado",
   };
 
@@ -53,17 +58,25 @@ export default async function AdminTorneioPorId({
           </span>
         </div>
         <div className="flex gap-3">
+          {/* Links usam slug na URL (semântico) */}
           <Link
-            href={"/admin/torneios/" + slug + "/inscricoes"}
+            href={`/admin/torneios/${slug}/inscricoes`}
             className="bg-[#1E3A5F] hover:bg-[#C8A84B]/20 text-white hover:text-[#C8A84B] text-sm px-3 py-1.5 rounded border border-[#1E3A5F] hover:border-[#C8A84B]/30 transition-colors"
           >
-            Inscricoes {pendingTeams ? "(" + pendingTeams + " pendentes)" : ""}
+            Inscricoes {pendingTeams ? `(${pendingTeams} pendentes)` : ""}
           </Link>
           <Link
-            href={"/admin/torneios/" + slug + "/partidas"}
+            href={`/admin/torneios/${slug}/partidas`}
             className="bg-[#1E3A5F] hover:bg-[#C8A84B]/20 text-white hover:text-[#C8A84B] text-sm px-3 py-1.5 rounded border border-[#1E3A5F] hover:border-[#C8A84B]/30 transition-colors"
           >
             Partidas
+          </Link>
+          <Link
+            href={`/torneios/${slug}`}
+            target="_blank"
+            className="bg-[#1E3A5F] hover:bg-[#C8A84B]/20 text-white hover:text-[#C8A84B] text-sm px-3 py-1.5 rounded border border-[#1E3A5F] hover:border-[#C8A84B]/30 transition-colors"
+          >
+            Ver publico ↗
           </Link>
         </div>
       </div>
@@ -88,22 +101,22 @@ export default async function AdminTorneioPorId({
         </div>
       </div>
 
-      {/* Bracket Generation */}
+      {/* Bracket Generation — recebe tournamentId (UUID real) */}
       <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4">
         <h2 className="text-sm font-bold text-[#C8A84B] mb-3">Gerenciar Bracket</h2>
         <GenerateBracketButton
-          tournamentId={slug}
+          tournamentId={tournamentId}
           approvedTeams={approvedTeams ?? 0}
           currentStatus={t.status}
         />
       </div>
 
-      {/* Edit Form */}
+      {/* Edit Form — passa tournamentId (UUID) e defaultValues com slug */}
       <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4">
         <h2 className="text-sm font-bold text-gray-400 mb-4">Editar Torneio</h2>
         <TournamentForm
           mode="edit"
-          tournamentId={t.id}
+          tournamentId={tournamentId}
           defaultValues={{
             name:        t.name        ?? "",
             slug:        t.slug        ?? "",
