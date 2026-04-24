@@ -1,13 +1,54 @@
+// lib/riot.ts
 import { getCached, setCached } from "@/lib/riot-cache";
 
-const API_KEY       = process.env.RIOT_API_KEY;
-const REGION        = process.env.RIOT_REGION        ?? "br1";
-const REGIONAL_HOST = process.env.RIOT_REGIONAL_HOST ?? "americas";
+// ─── CORREÇÃO BUG 1: leitura lazy dentro de função, nunca no module-level ─────
+function getApiKey(): string {
+  const key = process.env.RIOT_API_KEY;
+  if (!key) {
+    throw new Error("RIOT_API_KEY não configurada no servidor. Adicione no .env.local");
+  }
+  return key;
+}
 
-const PLATFORM = "https://" + REGION + ".api.riotgames.com";
-const REGIONAL = "https://" + REGIONAL_HOST + ".api.riotgames.com";
+// Mapa de region → regional routing value (continental)
+const REGION_TO_REGIONAL: Record<string, string> = {
+  br1: "americas",
+  na1: "americas",
+  la1: "americas",
+  la2: "americas",
+  euw1: "europe",
+  eun1: "europe",
+  tr1: "europe",
+  ru: "europe",
+  kr: "asia",
+  jp1: "asia",
+  oc1: "sea",
+  ph2: "sea",
+  sg2: "sea",
+  th2: "sea",
+  tw2: "sea",
+  vn2: "sea",
+};
 
-// ─── Data Dragon: busca versão atual dinamicamente ───────────────────────────
+function getRegion(): string {
+  return (process.env.RIOT_REGION ?? "br1").toLowerCase();
+}
+
+function getRegionalHost(): string {
+  const region = getRegion();
+  // ─── CORREÇÃO BUG 3: regional derivado da region, nunca fixo ──────────────
+  return process.env.RIOT_REGIONAL_HOST ?? REGION_TO_REGIONAL[region] ?? "americas";
+}
+
+function getPlatformUrl(): string {
+  return "https://" + getRegion() + ".api.riotgames.com";
+}
+
+function getRegionalUrl(): string {
+  return "https://" + getRegionalHost() + ".api.riotgames.com";
+}
+
+// ─── Data Dragon: versão dinâmica ─────────────────────────────────────────────
 let _ddVersion: string | null = null;
 
 export async function getDDVersion(): Promise<string> {
@@ -16,44 +57,51 @@ export async function getDDVersion(): Promise<string> {
   if (cached) { _ddVersion = cached; return cached; }
   try {
     const res = await fetch("https://ddragon.leagueoflegends.com/api/versions.json", {
-      next: { revalidate: 3600 }, // revalida a cada 1h
+      next: { revalidate: 3600 },
     });
     const versions: string[] = await res.json();
-    _ddVersion = versions[0]; // "16.8.1" atualmente
+    _ddVersion = versions[0];
     setCached("dd:version", _ddVersion, 3600);
     return _ddVersion;
   } catch {
-    _ddVersion = "16.8.1"; // fallback explícito
+    _ddVersion = "16.8.1";
     return _ddVersion;
   }
 }
 
 // ─── Helper principal ─────────────────────────────────────────────────────────
 async function riotFetch<T>(url: string): Promise<T> {
-  if (!API_KEY) {
-    throw new Error("RIOT_API_KEY não configurada no servidor. Adicione no .env.local");
-  }
+  const apiKey = getApiKey(); // ← CORREÇÃO BUG 1: lazy, nunca no import
+
   const res = await fetch(url, {
-    headers: { "X-Riot-Token": API_KEY },
+    headers: { "X-Riot-Token": apiKey },
     next: { revalidate: 300 },
   });
+
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     const msg = e?.status?.message ?? res.statusText;
-    // 403 = chave inválida/expirada | 404 = jogador não existe | 429 = rate limit
     throw new Error(`Riot API ${res.status}: ${msg}`);
   }
+
   return res.json() as Promise<T>;
 }
 
 // ─── Endpoints ────────────────────────────────────────────────────────────────
-export async function getAccountByRiotId(gameName: string, tagLine: string): Promise<RiotAccount> {
+
+export async function getAccountByRiotId(
+  gameName: string,
+  tagLine: string
+): Promise<RiotAccount> {
   const key = ("account:" + gameName + "#" + tagLine).toLowerCase();
   const cached = getCached<RiotAccount>(key);
   if (cached) return cached;
+
   const data = await riotFetch<RiotAccount>(
-    REGIONAL + "/riot/account/v1/accounts/by-riot-id/" +
-    encodeURIComponent(gameName) + "/" + encodeURIComponent(tagLine)
+    getRegionalUrl() +
+    "/riot/account/v1/accounts/by-riot-id/" +
+    encodeURIComponent(gameName) + "/" +
+    encodeURIComponent(tagLine)
   );
   setCached(key, data, 600);
   return data;
@@ -63,8 +111,9 @@ export async function getSummonerByPuuid(puuid: string): Promise<Summoner> {
   const key = "summoner:" + puuid;
   const cached = getCached<Summoner>(key);
   if (cached) return cached;
+
   const data = await riotFetch<Summoner>(
-    PLATFORM + "/lol/summoner/v4/summoners/by-puuid/" + puuid
+    getPlatformUrl() + "/lol/summoner/v4/summoners/by-puuid/" + puuid
   );
   setCached(key, data, 300);
   return data;
@@ -74,32 +123,46 @@ export async function getLeagueEntriesByPuuid(puuid: string): Promise<LeagueEntr
   const key = "league:" + puuid;
   const cached = getCached<LeagueEntry[]>(key);
   if (cached) return cached;
-  const summoner = await getSummonerByPuuid(puuid);
+
+  // ─── CORREÇÃO BUG 2: usa /by-puuid direto, sem buscar summoner antes ──────
   const data = await riotFetch<LeagueEntry[]>(
-    PLATFORM + "/lol/league/v4/entries/by-summoner/" + summoner.id
+    getPlatformUrl() + "/lol/league/v4/entries/by-puuid/" + puuid
   );
   setCached(key, data, 300);
   return data;
 }
 
-export async function getTopMasteriesByPuuid(puuid: string, count = 5): Promise<ChampionMastery[]> {
+export async function getTopMasteriesByPuuid(
+  puuid: string,
+  count = 5
+): Promise<ChampionMastery[]> {
   const key = "mastery:" + puuid + ":" + count;
   const cached = getCached<ChampionMastery[]>(key);
   if (cached) return cached;
+
   const data = await riotFetch<ChampionMastery[]>(
-    PLATFORM + "/lol/champion-mastery/v4/champion-masteries/by-puuid/" + puuid + "/top?count=" + count
+    getPlatformUrl() +
+    "/lol/champion-mastery/v4/champion-masteries/by-puuid/" +
+    puuid + "/top?count=" + count
   );
   setCached(key, data, 600);
   return data;
 }
 
-export async function getMatchIdsByPuuid(puuid: string, count = 20, queue?: number): Promise<string[]> {
+export async function getMatchIdsByPuuid(
+  puuid: string,
+  count = 20,
+  queue?: number
+): Promise<string[]> {
   const key = "matchids:" + puuid + ":" + count + ":" + (queue ?? "all");
   const cached = getCached<string[]>(key);
   if (cached) return cached;
+
   const q = queue ? "&queue=" + queue : "";
   const data = await riotFetch<string[]>(
-    REGIONAL + "/lol/match/v5/matches/by-puuid/" + puuid + "/ids?count=" + count + q
+    getRegionalUrl() +
+    "/lol/match/v5/matches/by-puuid/" +
+    puuid + "/ids?count=" + count + q
   );
   setCached(key, data, 120);
   return data;
@@ -109,16 +172,20 @@ export async function getMatchById(matchId: string): Promise<MatchDto> {
   const key = "match:" + matchId;
   const cached = getCached<MatchDto>(key);
   if (cached) return cached;
-  const data = await riotFetch<MatchDto>(REGIONAL + "/lol/match/v5/matches/" + matchId);
+
+  const data = await riotFetch<MatchDto>(
+    getRegionalUrl() + "/lol/match/v5/matches/" + matchId
+  );
   setCached(key, data, 3600);
   return data;
 }
 
-// URLs de assets (usam versão dinâmica)
+// ─── Asset URLs ───────────────────────────────────────────────────────────────
 export async function profileIconUrl(id: number): Promise<string> {
   const v = await getDDVersion();
   return `https://ddragon.leagueoflegends.com/cdn/${v}/img/profileicon/${id}.png`;
 }
+
 export async function championIconUrl(name: string): Promise<string> {
   const v = await getDDVersion();
   return `https://ddragon.leagueoflegends.com/cdn/${v}/img/champion/${name}.png`;
@@ -130,6 +197,7 @@ export interface RiotAccount {
   gameName: string;
   tagLine: string;
 }
+
 export interface Summoner {
   id: string;
   accountId: string;
@@ -138,6 +206,7 @@ export interface Summoner {
   revisionDate: number;
   summonerLevel: number;
 }
+
 export interface LeagueEntry {
   leagueId: string;
   queueType: string;
@@ -152,17 +221,20 @@ export interface LeagueEntry {
   freshBlood: boolean;
   inactive: boolean;
 }
+
 export interface ChampionMastery {
   championId: number;
-  championName: string; // ← estava faltando na interface original
+  championName: string;
   championLevel: number;
   championPoints: number;
   lastPlayTime: number;
 }
+
 export interface MatchDto {
   metadata: { matchId: string; participants: string[] };
   info: MatchInfo;
 }
+
 export interface MatchInfo {
   gameId: number;
   gameDuration: number;
@@ -172,6 +244,7 @@ export interface MatchInfo {
   participants: MatchParticipant[];
   teams: MatchTeam[];
 }
+
 export interface MatchTeam {
   teamId: number;
   win: boolean;
@@ -181,6 +254,7 @@ export interface MatchTeam {
     tower: { kills: number };
   };
 }
+
 export interface MatchParticipant {
   puuid: string;
   summonerName: string;
