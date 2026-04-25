@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 
 const SITE_TERMS_VERSION = 'v1'
 
-// Regras da plataforma BRLOL (definitivas serão atualizadas pelo admin)
 const SITE_RULES = [
   'O organizador é o único responsável pelo andamento e regras do seu torneio.',
   'Conteúdo ofensivo, discriminatório ou ilegal nos torneios resultará em suspensão imediata.',
@@ -20,19 +19,10 @@ export default function NovoTorneiPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
-  // Etapas: 1=regras do torneio | 2=termos do site | 3=dados gerais
   const [step, setStep] = useState(1)
-
-  // Controle de limite
   const [limitCheck, setLimitCheck] = useState<'loading' | 'ok' | 'blocked'>('loading')
-
-  // Termos
   const [termsAccepted, setTermsAccepted] = useState(false)
-
-  // Regras do torneio (criadas pelo organizador)
   const [tournamentRules, setTournamentRules] = useState('')
-
-  // Dados gerais
   const [nome, setNome]               = useState('')
   const [descricao, setDescricao]     = useState('')
   const [slug, setSlug]               = useState('')
@@ -43,22 +33,18 @@ export default function NovoTorneiPage() {
   const [prizePool, setPrizePool]     = useState('')
   const [startsAt, setStartsAt]       = useState('')
   const [endsAt, setEndsAt]           = useState('')
-
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState('')
 
-  // Verifica limite de 2 torneios ao carregar
   useEffect(() => {
     async function checkLimit() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-
       const { count } = await supabase
         .from('tournaments')
         .select('id', { count: 'exact', head: true })
         .eq('organizer_id', user.id)
         .neq('status', 'CANCELLED')
-
       setLimitCheck((count ?? 0) >= 2 ? 'blocked' : 'ok')
     }
     checkLimit()
@@ -79,7 +65,6 @@ export default function NovoTorneiPage() {
       const { data: { user }, error: authErr } = await supabase.auth.getUser()
       if (authErr || !user) { router.push('/login'); return }
 
-      // Revalida limite no submit (segurança extra)
       const { count } = await supabase
         .from('tournaments')
         .select('id', { count: 'exact', head: true })
@@ -92,15 +77,11 @@ export default function NovoTorneiPage() {
         return
       }
 
-      // 1. Registrar aceite dos termos do site (idempotente)
       await supabase.from('site_terms_acceptance').upsert({
         profile_id: user.id,
         terms_version: SITE_TERMS_VERSION,
       }, { onConflict: 'profile_id,terms_version' })
 
-      // 2. Criar torneio
-      // NOTA: starts_at e ends_at são GENERATED COLUMNS que espelham start_date/end_date.
-      // Nunca inserir diretamente em starts_at/ends_at — usar start_date/end_date.
       const finalSlug = slug.trim() || gerarSlug(nome)
       const { data: torneio, error: tErr } = await supabase
         .from('tournaments')
@@ -125,7 +106,7 @@ export default function NovoTorneiPage() {
 
       if (tErr) throw new Error(tErr.message)
 
-      router.push(`/organizador/torneios/${torneio.id}?criado=true`)
+      router.push(`/torneios/${torneio.id}/inscricoes`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro ao criar torneio')
     } finally {
@@ -133,7 +114,6 @@ export default function NovoTorneiPage() {
     }
   }
 
-  // ─── Estado: verificando limite ───
   if (limitCheck === 'loading') {
     return (
       <div className="max-w-2xl mx-auto">
@@ -145,7 +125,6 @@ export default function NovoTorneiPage() {
     )
   }
 
-  // ─── Estado: limite atingido ───
   if (limitCheck === 'blocked') {
     return (
       <div className="max-w-2xl mx-auto">
@@ -157,23 +136,17 @@ export default function NovoTorneiPage() {
             Cancele ou finalize um torneio existente antes de criar outro.
           </p>
           <div className="flex gap-3 justify-center pt-2">
-            <a href="/organizador" className="btn-gold px-6 py-2.5 text-sm">
-              Ver meus torneios
-            </a>
-            <a href="/torneios" className="btn-outline-gold px-6 py-2.5 text-sm">
-              Ver todos os torneios
-            </a>
+            <a href="/organizador" className="btn-gold px-6 py-2.5 text-sm">Ver meus torneios</a>
+            <a href="/torneios" className="btn-outline-gold px-6 py-2.5 text-sm">Ver todos os torneios</a>
           </div>
         </div>
       </div>
     )
   }
 
-  // ─── Wizard normal ───
   return (
     <div className="max-w-2xl mx-auto space-y-6">
 
-      {/* Indicador de etapas */}
       <div className="flex items-center gap-2">
         {[1, 2, 3].map(s => (
           <div key={s} className="flex items-center gap-2">
@@ -192,7 +165,6 @@ export default function NovoTorneiPage() {
         </div>
       </div>
 
-      {/* ETAPA 1 — Regras do torneio */}
       {step === 1 && (
         <div className="card-lol space-y-4">
           <div>
@@ -211,17 +183,13 @@ export default function NovoTorneiPage() {
           />
           <p className="text-gray-600 text-xs text-right">{tournamentRules.length}/3000</p>
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => router.back()} className="btn-outline-gold flex-1 py-3">
-              Cancelar
-            </button>
+            <button type="button" onClick={() => router.back()} className="btn-outline-gold flex-1 py-3">Cancelar</button>
             <button
               type="button"
               onClick={() => setStep(2)}
               disabled={tournamentRules.trim().length < 20}
               className="btn-gold flex-1 py-3"
-            >
-              Próximo →
-            </button>
+            >Próximo →</button>
           </div>
           {tournamentRules.trim().length > 0 && tournamentRules.trim().length < 20 && (
             <p className="text-yellow-500 text-xs">Descreva as regras com pelo menos 20 caracteres.</p>
@@ -229,14 +197,11 @@ export default function NovoTorneiPage() {
         </div>
       )}
 
-      {/* ETAPA 2 — Termos do Site */}
       {step === 2 && (
         <div className="card-lol space-y-4">
           <div>
             <h1 className="text-xl font-bold text-white">🛡️ Termos da Plataforma BRLOL</h1>
-            <p className="text-gray-400 text-sm mt-1">
-              Ao criar um torneio, você concorda com as seguintes regras da plataforma.
-            </p>
+            <p className="text-gray-400 text-sm mt-1">Ao criar um torneio, você concorda com as seguintes regras da plataforma.</p>
           </div>
           <div className="bg-[#060E1A] rounded-lg border border-[#1E3A5F] divide-y divide-[#1E3A5F]">
             {SITE_RULES.map((rule, i) => (
@@ -259,27 +224,21 @@ export default function NovoTorneiPage() {
             </span>
           </label>
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => setStep(1)} className="btn-outline-gold flex-1 py-3">
-              ← Voltar
-            </button>
+            <button type="button" onClick={() => setStep(1)} className="btn-outline-gold flex-1 py-3">← Voltar</button>
             <button
               type="button"
               onClick={() => setStep(3)}
               disabled={!termsAccepted}
               className="btn-gold flex-1 py-3"
-            >
-              Aceitar e Continuar →
-            </button>
+            >Aceitar e Continuar →</button>
           </div>
         </div>
       )}
 
-      {/* ETAPA 3 — Dados do Torneio */}
       {step === 3 && (
         <form onSubmit={handleSubmit} className="card-lol space-y-5">
           <h1 className="text-xl font-bold text-white">🏆 Dados do Torneio</h1>
 
-          {/* Nome */}
           <div>
             <label className="block text-gray-400 text-sm mb-1">Nome do Torneio <span className="text-red-400">*</span></label>
             <input
@@ -292,7 +251,6 @@ export default function NovoTorneiPage() {
             />
           </div>
 
-          {/* Slug */}
           <div>
             <label className="block text-gray-400 text-sm mb-1">Slug (URL) <span className="text-gray-600 text-xs">gerado automaticamente</span></label>
             <div className="flex items-center gap-2">
@@ -307,7 +265,6 @@ export default function NovoTorneiPage() {
             </div>
           </div>
 
-          {/* Descrição */}
           <div>
             <label className="block text-gray-400 text-sm mb-1">Descrição</label>
             <textarea
@@ -319,7 +276,6 @@ export default function NovoTorneiPage() {
             />
           </div>
 
-          {/* Formato + Times */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-400 text-sm mb-1">Formato</label>
@@ -340,7 +296,6 @@ export default function NovoTorneiPage() {
             </div>
           </div>
 
-          {/* Membros por time */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-400 text-sm mb-1">Mín. Membros/Time</label>
@@ -362,7 +317,6 @@ export default function NovoTorneiPage() {
             </div>
           </div>
 
-          {/* Datas */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-400 text-sm mb-1">Data de Início</label>
@@ -374,7 +328,6 @@ export default function NovoTorneiPage() {
             </div>
           </div>
 
-          {/* Prize Pool */}
           <div>
             <label className="block text-gray-400 text-sm mb-1">Prêmio (opcional)</label>
             <input
