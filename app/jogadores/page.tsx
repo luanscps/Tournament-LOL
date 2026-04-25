@@ -48,7 +48,7 @@ export default async function JogadoresPage({
   let query = supabase
     .from('players')
     .select(
-      'id, summoner_name, tagline, role, tier, rank, lp, wins, losses, puuid, team_id, teams(id, name, tag)'
+      'id, summoner_name, tag_line, role, tier, rank, lp, wins, losses, puuid, team_id, teams(id, name, tag)'
     )
     .order('lp', { ascending: false });
 
@@ -154,8 +154,8 @@ export default async function JogadoresPage({
                       <span className="text-white font-semibold text-sm">
                         {player.summoner_name}
                       </span>
-                      {player.tagline && (
-                        <span className="text-gray-500 text-xs">#{player.tagline}</span>
+                      {player.tag_line && (
+                        <span className="text-gray-500 text-xs">#{player.tag_line}</span>
                       )}
                       {player.role && (
                         <span className="text-xs text-[#C8A84B] bg-[#C8A84B]/10 border border-[#C8A84B]/20 rounded px-1.5 py-0.5">

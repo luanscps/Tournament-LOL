@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { User } from "@supabase/supabase-js";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 
@@ -18,43 +18,42 @@ export function Navbar() {
   const [loading, setLoading] = useState(true);
   const pathname              = usePathname();
   const router                = useRouter();
-  const supabase              = createClient();
+  // Instância estável do cliente Supabase (não recria a cada render)
+  const supabase = useRef(createClient()).current;
+
+  async function fetchAdminStatus(userId: string) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", userId)
+      .single();
+    setIsAdmin(!!data?.is_admin);
+  }
 
   useEffect(() => {
-    // Carrega sessao inicial
+    // Carga inicial
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
       setLoading(false);
-      if (user) {
-        supabase
-          .from("profiles")
-          .select("is_admin")
-          .eq("id", user.id)
-          .single()
-          .then(({ data }) => setIsAdmin(!!data?.is_admin));
-      }
+      if (user) fetchAdminStatus(user.id);
     });
 
-    // Escuta mudancas de autenticacao em tempo real
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      setLoading(false);
-      if (currentUser) {
-        supabase
-          .from("profiles")
-          .select("is_admin")
-          .eq("id", currentUser.id)
-          .single()
-          .then(({ data }) => setIsAdmin(!!data?.is_admin));
-      } else {
-        setIsAdmin(false);
+    // Escuta mudanças de autenticação em tempo real
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        setLoading(false);
+        if (currentUser) {
+          await fetchAdminStatus(currentUser.id);
+        } else {
+          setIsAdmin(false);
+        }
       }
-    });
+    );
 
     return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleLogout() {
@@ -95,7 +94,7 @@ export function Navbar() {
               className={`px-3 py-1.5 rounded text-sm transition-colors ${
                 pathname.startsWith('/admin')
                   ? 'text-[#C8A84B] bg-[#C8A84B]/10'
-                  : 'text-gray-400 hover:text-white'
+                  : 'text-red-400 hover:text-red-300'
               }`}
             >
               ⚙️ Admin
@@ -109,7 +108,6 @@ export function Navbar() {
             <span className="text-gray-500 text-sm">...</span>
           ) : user ? (
             <>
-              {/* Notification Bell */}
               <NotificationBell userId={user.id} />
               <Link
                 href="/dashboard"

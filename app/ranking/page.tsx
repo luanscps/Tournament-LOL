@@ -30,7 +30,7 @@ export default async function RankingPage({
 
   let query = supabase
     .from('players')
-    .select('id, summoner_name, tagline, tier, rank, lp, wins, losses, team_id, teams(name, tag)')
+    .select('id, summoner_name, tag_line, tier, rank, lp, wins, losses, team_id, teams(name, tag)')
     .order('lp', { ascending: false })
     .order('tier')
     .limit(100);
@@ -100,7 +100,7 @@ export default async function RankingPage({
               }`}>
                 <div className="text-2xl">{pos === 0 ? '🥇' : pos === 1 ? '🥈' : '🥉'}</div>
                 <div className="font-bold text-white text-sm mt-1">{p.summoner_name}</div>
-                <div className="text-xs text-gray-400">#{p.tagline}</div>
+                <div className="text-xs text-gray-400">#{p.tag_line}</div>
                 <div className={`text-xs mt-1 font-semibold ${TIER_COLORS[p.tier ?? 'UNRANKED']}`}>
                   {p.tier} {p.rank} {p.lp}LP
                 </div>
@@ -134,7 +134,7 @@ export default async function RankingPage({
                 <td className="px-4 py-3 text-gray-400 font-mono">{i + 1}</td>
                 <td className="px-4 py-3">
                   <div className="font-semibold text-white">{player.summoner_name}</div>
-                  <div className="text-xs text-gray-500">#{player.tagline}</div>
+                  <div className="text-xs text-gray-500">#{player.tag_line}</div>
                 </td>
                 <td className="px-4 py-3">
                   {player.teams ? (
