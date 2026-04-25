@@ -1,6 +1,6 @@
 // app/admin/layout.tsx
 import { redirect } from 'next/navigation'
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import Link from 'next/link'
 
@@ -14,16 +14,14 @@ export default async function AdminLayout({
   children: React.ReactNode
 }) {
   const cookieStore = await cookies()
-  const headersList = await headers()
 
-  // 1. Verifica autenticacao basica
+  // 1. Verifica autenticacao com anon key (lê cookies do browser)
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setAll: (cookiesToSet: { name: string; value: string; options?: any }[]) => {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
@@ -41,42 +39,27 @@ export default async function AdminLayout({
     redirect('/login?redirectTo=/admin')
   }
 
-  // 2. Verifica is_admin via fetch interno para /api/auth/me (usa service role)
-  const host = headersList.get('host') ?? 'localhost:3000'
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-  const cookieHeader = cookieStore.getAll()
-    .map((c) => `${c.name}=${c.value}`)
-    .join('; ')
+  // 2. Verifica is_admin com service role (bypassa RLS completamente)
+  // Não usa fetch interno — queries diretas são mais confiáveis na Vercel Serverless
+  const supabaseAdmin = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      cookies: { getAll: () => [], setAll: () => {} },
+    }
+  )
 
-  let isAdmin = false
-  try {
-    const res = await fetch(`${protocol}://${host}/api/auth/me`, {
-      headers: { cookie: cookieHeader },
-      cache: 'no-store',
-    })
-    if (res.ok) {
-      const data = await res.json()
-      isAdmin = data.isAdmin === true
-    }
-  } catch (e) {
-    console.error('[AdminLayout] Erro ao verificar admin:', e)
-    // Fallback: query direta com service role
-    try {
-      const supabaseAdmin = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        { cookies: { getAll: () => [], setAll: () => {} } }
-      )
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', user!.id)
-        .single()
-      isAdmin = profile?.is_admin === true
-    } catch (e2) {
-      console.error('[AdminLayout] Fallback tambem falhou:', e2)
-    }
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user!.id)
+    .single()
+
+  if (profileError) {
+    console.error('[AdminLayout] Erro ao buscar profile:', profileError.message)
   }
+
+  const isAdmin = profile?.is_admin === true
 
   if (!isAdmin) {
     redirect('/?error=acesso_negado')
