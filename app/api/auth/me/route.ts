@@ -1,7 +1,8 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieMethodsServer } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import type { ResponseCookie } from 'next/dist/compiled/@edge-runtime/cookies'
+
+type CookieToSet = Parameters<CookieMethodsServer['setAll']>[0][number]
 
 export async function GET() {
   const cookieStore = await cookies()
@@ -12,9 +13,9 @@ export async function GET() {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet: Pick<ResponseCookie, 'name' | 'value' | 'options'>[]) => {
-          cookiesToSet.forEach(({ name, value, options }: Pick<ResponseCookie, 'name' | 'value' | 'options'>) =>
-            cookieStore.set(name, value, options as Parameters<typeof cookieStore.set>[2])
+        setAll: (cookiesToSet: CookieToSet[]) => {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
           )
         },
       },
