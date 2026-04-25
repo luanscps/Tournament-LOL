@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import type { ResponseCookie } from 'next/dist/compiled/@edge-runtime/cookies'
 
 export async function POST() {
   const cookieStore = await cookies()
@@ -11,9 +12,9 @@ export async function POST() {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+        setAll: (cookiesToSet: Pick<ResponseCookie, 'name' | 'value' | 'options'>[]) => {
+          cookiesToSet.forEach(({ name, value, options }: Pick<ResponseCookie, 'name' | 'value' | 'options'>) =>
+            cookieStore.set(name, value, options as Parameters<typeof cookieStore.set>[2])
           )
         },
       },
@@ -22,7 +23,6 @@ export async function POST() {
 
   await supabase.auth.signOut()
 
-  // Garante limpeza de todos os cookies sb-* mesmo se signOut falhar
   const allCookies = cookieStore.getAll()
   const response = NextResponse.json({ success: true })
   allCookies
