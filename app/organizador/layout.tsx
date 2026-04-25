@@ -1,5 +1,5 @@
 // app/organizador/layout.tsx
-// Guarda: apenas role='organizer' ou role='admin'
+// Guarda: qualquer conta autenticada pode acessar (criar torneio)
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
@@ -27,6 +27,7 @@ export default async function OrganizadorLayout({ children }: { children: React.
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) redirect('/login?redirectTo=/organizador')
 
+  // Busca perfil apenas para exibir nome e verificar is_admin
   const supabaseAdmin = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -35,13 +36,12 @@ export default async function OrganizadorLayout({ children }: { children: React.
 
   const { data: profile } = await supabaseAdmin
     .from('profiles')
-    .select('role, full_name, email')
+    .select('is_admin, full_name, email')
     .eq('id', user.id)
     .single()
 
-  if (!profile || !['organizer', 'admin'].includes(profile.role)) {
-    redirect('/dashboard?error=acesso_negado')
-  }
+  // Qualquer conta logada pode acessar — sem restricao de role
+  if (!profile) redirect('/login?redirectTo=/organizador')
 
   return (
     <div className="min-h-screen bg-[#060E1A]">
@@ -55,11 +55,10 @@ export default async function OrganizadorLayout({ children }: { children: React.
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">{profile.full_name ?? profile.email}</span>
-          <span className="text-xs bg-blue-900/40 text-blue-300 px-2 py-1 rounded font-medium">Organizador</span>
-          <Link href="/dashboard" className="text-xs text-gray-400 hover:text-white transition-colors">← Dashboard</Link>
-          {profile.role === 'admin' && (
+          {profile.is_admin && (
             <Link href="/admin" className="text-xs text-purple-400 hover:text-purple-200 transition-colors">Admin →</Link>
           )}
+          <Link href="/dashboard" className="text-xs text-gray-400 hover:text-white transition-colors">← Dashboard</Link>
         </div>
       </nav>
       <main className="p-6">{children}</main>
