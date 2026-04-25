@@ -24,23 +24,22 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 export default function RegistrarRiotPage() {
-  const [riotId,  setRiotId]  = useState("");
-  const [result,  setResult]  = useState<SummonerResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [error,   setError]   = useState("");
-  const [saved,   setSaved]   = useState(false);
-  const [ddVersion, setDdVersion] = useState("16.8.1"); // fallback
+  const [riotId,    setRiotId]    = useState("");
+  const [result,    setResult]    = useState<SummonerResult | null>(null);
+  const [loading,   setLoading]   = useState(false);
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState("");
+  const [saved,     setSaved]     = useState(false);
+  const [ddVersion, setDdVersion] = useState("16.8.1");
 
   const router   = useRouter();
   const supabase = createClient();
 
-  // Busca versão atual do Data Dragon ao montar o componente
   useEffect(() => {
     fetch("https://ddragon.leagueoflegends.com/api/versions.json")
       .then(r => r.json())
       .then((versions: string[]) => { if (versions?.[0]) setDdVersion(versions[0]); })
-      .catch(() => {}); // mantém fallback silenciosamente
+      .catch(() => {});
   }, []);
 
   const DD = "https://ddragon.leagueoflegends.com/cdn/" + ddVersion;
@@ -55,7 +54,6 @@ export default function RegistrarRiotPage() {
     setLoading(true);
     setError("");
     setResult(null);
-
     try {
       const res  = await fetch("/api/riot/summoner?riotId=" + encodeURIComponent(trimmed));
       const data = await res.json();
@@ -77,29 +75,80 @@ export default function RegistrarRiotPage() {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) { router.push("/login"); return; }
 
-      // Upsert na riot_accounts
-      const { data: acct, error: e1 } = await supabase
+      // ---------------------------------------------------------------
+      // ESTRATÉGIA: INSERT → se conflito em puuid faz UPDATE manual.
+      // Evita o erro "ON CONFLICT DO UPDATE command cannot affect row a
+      // second time" causado pelo trigger ensure_single_primary_riot_account
+      // que também faz UPDATE na mesma transação do upsert is_primary=true.
+      // ---------------------------------------------------------------
+
+      // 1) Tenta INSERT sem is_primary (trigger não dispara UPDATE extra)
+      const payload = {
+        profile_id:      user.id,
+        puuid:           result.account.puuid,
+        game_name:       result.account.gameName,
+        tag_line:        result.account.tagLine,
+        summoner_id:     result.summoner.id,
+        summoner_level:  result.summoner.summonerLevel,
+        profile_icon_id: result.summoner.profileIconId,
+        is_primary:      false,           // será setado no passo 3
+        updated_at:      new Date().toISOString(),
+      };
+
+      let acctId: string | null = null;
+
+      const { data: inserted, error: insertErr } = await supabase
         .from("riot_accounts")
-        .upsert({
-          profile_id:       user.id,
-          puuid:            result.account.puuid,
-          game_name:        result.account.gameName,
-          tag_line:         result.account.tagLine,
-          summoner_id:      result.summoner.id,
-          summoner_level:   result.summoner.summonerLevel,
-          profile_icon_id:  result.summoner.profileIconId,
-          is_primary:       true,
-          updated_at:       new Date().toISOString(),
-        }, { onConflict: "puuid" })
-        .select()
+        .insert(payload)
+        .select("id")
         .single();
 
-      if (e1) throw new Error("Erro ao salvar conta Riot: " + e1.message);
+      if (insertErr) {
+        // Conflito de puuid → conta já existe, só atualiza campos
+        if (insertErr.code === "23505") {
+          const { data: updated, error: updateErr } = await supabase
+            .from("riot_accounts")
+            .update({
+              game_name:       result.account.gameName,
+              tag_line:        result.account.tagLine,
+              summoner_id:     result.summoner.id,
+              summoner_level:  result.summoner.summonerLevel,
+              profile_icon_id: result.summoner.profileIconId,
+              updated_at:      new Date().toISOString(),
+            })
+            .eq("puuid", result.account.puuid)
+            .eq("profile_id", user.id)
+            .select("id")
+            .single();
 
-      // rank_snapshots em batch (era sequencial antes — corrigido)
+          if (updateErr) throw new Error("Erro ao atualizar conta Riot: " + updateErr.message);
+          acctId = updated?.id ?? null;
+        } else {
+          throw new Error("Erro ao salvar conta Riot: " + insertErr.message);
+        }
+      } else {
+        acctId = inserted?.id ?? null;
+      }
+
+      if (!acctId) throw new Error("Não foi possível obter o ID da conta Riot.");
+
+      // 2) Desmarca is_primary das outras contas do perfil
+      await supabase
+        .from("riot_accounts")
+        .update({ is_primary: false })
+        .eq("profile_id", user.id)
+        .neq("id", acctId);
+
+      // 3) Marca esta conta como primária
+      await supabase
+        .from("riot_accounts")
+        .update({ is_primary: true })
+        .eq("id", acctId);
+
+      // 4) rank_snapshots em batch
       if (result.entries.length > 0) {
         const snapshots = result.entries.map(entry => ({
-          riot_account_id: acct.id,
+          riot_account_id: acctId,
           queue_type:      entry.queueType,
           tier:            entry.tier,
           rank:            entry.rank,
@@ -108,13 +157,13 @@ export default function RegistrarRiotPage() {
           losses:          entry.losses,
         }));
         const { error: e2 } = await supabase.from("rank_snapshots").insert(snapshots);
-        if (e2) console.warn("rank_snapshots:", e2.message); // não bloqueia o fluxo
+        if (e2) console.warn("rank_snapshots:", e2.message);
       }
 
-      // champion_masteries em batch
+      // 5) champion_masteries em batch
       if (result.masteries.length > 0) {
         const masteries = result.masteries.map(m => ({
-          riot_account_id: acct.id,
+          riot_account_id: acctId,
           champion_id:     m.championId,
           champion_name:   m.championName,
           mastery_level:   m.championLevel,
@@ -160,12 +209,8 @@ export default function RegistrarRiotPage() {
           <div className="mt-3 bg-red-900/30 border border-red-500/40 rounded p-3">
             <p className="text-red-400 text-sm">{error}</p>
             {error.includes("expirada") && (
-              <a
-                href="https://developer.riotgames.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-yellow-400 underline text-xs mt-1 block"
-              >
+              <a href="https://developer.riotgames.com" target="_blank" rel="noopener noreferrer"
+                className="text-yellow-400 underline text-xs mt-1 block">
                 → Renovar chave em developer.riotgames.com
               </a>
             )}
@@ -175,7 +220,6 @@ export default function RegistrarRiotPage() {
 
       {result && (
         <div className="card-lol space-y-4">
-          {/* Perfil */}
           <div className="flex items-center gap-4">
             <Image
               src={DD + "/img/profileicon/" + result.summoner.profileIconId + ".png"}
@@ -191,7 +235,6 @@ export default function RegistrarRiotPage() {
             </div>
           </div>
 
-          {/* Ranks */}
           {result.entries.length > 0 && (
             <div className="space-y-2">
               <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Rank Oficial</p>
@@ -203,15 +246,11 @@ export default function RegistrarRiotPage() {
                     </p>
                     <p className="text-gray-400 text-xs">
                       {e.wins}V · {e.losses}D ·{" "}
-                      {e.wins + e.losses > 0
-                        ? Math.round((e.wins / (e.wins + e.losses)) * 100)
-                        : 0}% WR
+                      {e.wins + e.losses > 0 ? Math.round((e.wins / (e.wins + e.losses)) * 100) : 0}% WR
                     </p>
                   </div>
                   <p className="font-bold" style={{ color: TIER_COLORS[e.tier] ?? "#666" }}>
-                    {e.tier === "UNRANKED"
-                      ? "Sem Rank"
-                      : `${e.tier} ${e.rank} — ${e.leaguePoints} LP`}
+                    {e.tier === "UNRANKED" ? "Sem Rank" : `${e.tier} ${e.rank} — ${e.leaguePoints} LP`}
                   </p>
                 </div>
               ))}
@@ -222,7 +261,6 @@ export default function RegistrarRiotPage() {
             <p className="text-gray-500 text-sm text-center">Jogador sem rank nesta temporada</p>
           )}
 
-          {/* Maestrias */}
           {result.masteries.length > 0 && (
             <div>
               <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Top Campeões</p>
@@ -241,7 +279,6 @@ export default function RegistrarRiotPage() {
             </div>
           )}
 
-          {/* Ação */}
           {saved ? (
             <p className="text-green-400 font-bold text-center">✅ Conta vinculada! Redirecionando...</p>
           ) : (
