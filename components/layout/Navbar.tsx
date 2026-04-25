@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useState, useEffect, useRef } from "react";
 import type { User } from "@supabase/supabase-js";
@@ -16,12 +16,24 @@ export function Navbar() {
   const [user, setUser]       = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
-  const pathname              = usePathname();
-  const router                = useRouter();
-  // Instância estável do cliente Supabase (não recria a cada render)
+  const [loggingOut, setLoggingOut] = useState(false);
+  const pathname = usePathname();
+  // Singleton estável — nunca recria entre renders
   const supabase = useRef(createClient()).current;
 
   async function fetchAdminStatus(userId: string) {
+    try {
+      // Tenta via RPC SECURITY DEFINER (ignora RLS)
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc("is_current_user_admin");
+      if (!rpcError) {
+        setIsAdmin(!!rpcData);
+        return;
+      }
+    } catch (_) {
+      // RPC não existe ainda — usa fallback
+    }
+    // Fallback: query direta na tabela profiles
     const { data } = await supabase
       .from("profiles")
       .select("is_admin")
@@ -31,14 +43,14 @@ export function Navbar() {
   }
 
   useEffect(() => {
-    // Carga inicial
+    // Leitura inicial segura
     supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
+      setUser(user ?? null);
       setLoading(false);
       if (user) fetchAdminStatus(user.id);
     });
 
-    // Escuta mudanças de autenticação em tempo real
+    // Listener de mudanças de sessão
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const currentUser = session?.user ?? null;
@@ -57,11 +69,16 @@ export function Navbar() {
   }, []);
 
   async function handleLogout() {
-    await supabase.auth.signOut();
-    setUser(null);
-    setIsAdmin(false);
-    router.push("/");
-    router.refresh();
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+    } catch (_) {
+      // Ignora erro — continua o logout de qualquer forma
+    }
+    // Recarga completa: garante que cookies do servidor sejam limpos
+    // antes de qualquer Server Component re-renderizar
+    window.location.href = "/";
   }
 
   return (
@@ -80,9 +97,9 @@ export function Navbar() {
               key={href}
               href={href}
               className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                pathname === href || pathname.startsWith(href + '/')
-                  ? 'text-[#C8A84B] bg-[#C8A84B]/10'
-                  : 'text-gray-400 hover:text-white'
+                pathname === href || pathname.startsWith(href + "/")
+                  ? "text-[#C8A84B] bg-[#C8A84B]/10"
+                  : "text-gray-400 hover:text-white"
               }`}
             >
               {label}
@@ -91,10 +108,10 @@ export function Navbar() {
           {isAdmin && (
             <Link
               href="/admin"
-              className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                pathname.startsWith('/admin')
-                  ? 'text-[#C8A84B] bg-[#C8A84B]/10'
-                  : 'text-red-400 hover:text-red-300'
+              className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
+                pathname.startsWith("/admin")
+                  ? "text-[#C8A84B] bg-[#C8A84B]/10"
+                  : "text-red-400 hover:text-red-300"
               }`}
             >
               ⚙️ Admin
@@ -105,21 +122,26 @@ export function Navbar() {
         {/* Auth + Notifications */}
         <div className="flex items-center gap-2">
           {loading ? (
-            <span className="text-gray-500 text-sm">...</span>
+            <span className="text-gray-500 text-sm animate-pulse">•••</span>
           ) : user ? (
             <>
               <NotificationBell userId={user.id} />
               <Link
                 href="/dashboard"
-                className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded transition-colors"
+                className={`text-sm px-3 py-1.5 rounded transition-colors ${
+                  pathname === "/dashboard"
+                    ? "text-[#C8A84B]"
+                    : "text-gray-400 hover:text-white"
+                }`}
               >
                 Dashboard
               </Link>
               <button
                 onClick={handleLogout}
-                className="text-sm text-gray-400 hover:text-red-400 px-3 py-1.5 rounded transition-colors"
+                disabled={loggingOut}
+                className="text-sm text-gray-400 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded transition-colors"
               >
-                Sair
+                {loggingOut ? "Saindo..." : "Sair"}
               </button>
             </>
           ) : (
