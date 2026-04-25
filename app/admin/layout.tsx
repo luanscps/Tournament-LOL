@@ -61,8 +61,9 @@ export default async function AdminLayout({
 
   const isAdmin = profile?.is_admin === true
 
+  // Redireciona para /dashboard com aviso — dashboard exibe banner de acesso negado
   if (!isAdmin) {
-    redirect('/?error=acesso_negado')
+    redirect('/dashboard?error=acesso_negado')
   }
 
   return (
