@@ -20,11 +20,10 @@ export default function CheckinPage() {
   const router   = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const [insc, setInsc]       = useState<InscricaoDetalhe | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [insc, setInsc]             = useState<InscricaoDetalhe | null>(null);
+  const [loading, setLoading]       = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError]     = useState('');
-  const [success, setSuccess] = useState(false);
+  const [error, setError]           = useState('');
 
   useEffect(() => {
     async function load() {
@@ -46,7 +45,7 @@ export default function CheckinPage() {
       const team = data.teams as any;
       if (team.owner_id !== user.id) { setError('Apenas o capitão pode fazer check-in.'); setLoading(false); return; }
 
-      setInsc(data as any);
+      setInsc(data as unknown as InscricaoDetalhe);
       setLoading(false);
     }
     load();
@@ -59,10 +58,14 @@ export default function CheckinPage() {
     const result = await fazerCheckin(insc.id);
     if (result.error) {
       setError(result.error);
-    } else {
-      setSuccess(true);
-      setInsc(prev => prev ? { ...prev, checked_in: true, checked_in_at: new Date().toISOString() } : prev);
+      setSubmitting(false);
+      return;
     }
+    // Atualiza estado em batch — elimina race condition
+    setInsc(prev => prev
+      ? { ...prev, checked_in: true, checked_in_at: new Date().toISOString() }
+      : prev
+    );
     setSubmitting(false);
   }
 
@@ -92,7 +95,7 @@ export default function CheckinPage() {
 
         <h1 className="text-2xl font-bold text-white">📋 Check-in no Torneio</h1>
 
-        {/* Info do Torneio */}
+        {/* Info */}
         <div className="card-lol space-y-2">
           <p className="text-gray-400 text-xs uppercase tracking-wider">Torneio</p>
           <p className="text-white font-bold text-lg">🏆 {tourn.name}</p>
@@ -101,12 +104,12 @@ export default function CheckinPage() {
           </p>
         </div>
 
-        {/* Status */}
+        {/* Estados */}
         {insc.status !== 'APPROVED' ? (
           <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4">
             <p className="text-yellow-400 font-semibold">⚠️ Inscrição ainda não aprovada</p>
             <p className="text-gray-400 text-sm mt-1">
-              Seu time precisa ter a inscrição <strong>APROVADA</strong> pelo administrador antes de fazer check-in.
+              Seu time precisa ter a inscrição <strong>APROVADA</strong> antes do check-in.
             </p>
           </div>
         ) : insc.checked_in ? (
@@ -122,18 +125,12 @@ export default function CheckinPage() {
         ) : (
           <div className="card-lol space-y-4">
             <p className="text-gray-300 text-sm">
-              Confirme a presença do seu time no torneio. Após o check-in, sua vaga estará garantida.
+              Confirme a presença do seu time. Após o check-in, sua vaga estará garantida.
             </p>
 
             {error && (
               <div className="bg-red-900/30 border border-red-500/40 rounded p-3">
                 <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
-
-            {success && (
-              <div className="bg-green-900/20 border border-green-500/30 rounded p-3">
-                <p className="text-green-400 text-sm">✅ Check-in realizado com sucesso!</p>
               </div>
             )}
 

@@ -55,7 +55,7 @@ export async function rejeitarInscricao(teamId: string, tournamentId: string) {
 // ─── ADMIN: Desfazer check-in ──────────────────────────────────────────────
 export async function desfazerCheckin(inscricaoId: string) {
   try {
-    const { supabase } = await requireAdmin();
+    const { supabase, adminId: _adminId } = await requireAdmin();
     const { error } = await supabase
       .from('inscricoes')
       .update({ checked_in: false, checked_in_at: null, checked_in_by: null })
@@ -81,7 +81,7 @@ export async function criarInscricao(teamId: string, tournamentId: string) {
       requested_by:  user.id,
     });
     if (error) return { error: error.message };
-    revalidatePath('/dashboard/times');
+    revalidatePath('/dashboard');
     revalidatePath(`/torneios/${tournamentId}`);
     return { success: true };
   } catch (e: any) {
@@ -100,9 +100,10 @@ export async function fazerCheckin(inscricaoId: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: 'Não autenticado' };
 
+  // Busca inscrição + team_id para revalidar a rota correta
   const { data: insc, error: fetchErr } = await supabase
     .from('inscricoes')
-    .select('id, status, teams!inner(owner_id)')
+    .select('id, status, team_id, teams!inner(owner_id)')
     .eq('id', inscricaoId)
     .single();
 
@@ -122,7 +123,11 @@ export async function fazerCheckin(inscricaoId: string) {
     .eq('id', inscricaoId);
 
   if (error) return { error: error.message };
-  revalidatePath('/dashboard/times');
+
+  // Revalida rotas corretas usando o team_id real
+  revalidatePath('/dashboard');
+  revalidatePath(`/dashboard/times/${insc.team_id}`);
+  revalidatePath(`/dashboard/times/${insc.team_id}/checkin`);
   return { success: true };
 }
 

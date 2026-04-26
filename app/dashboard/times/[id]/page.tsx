@@ -4,8 +4,6 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
-const DD_VERSION = '14.10.1';
-
 const ROLE_LABELS: Record<string, string> = {
   TOP: 'Top', JUNGLE: 'Jungle', MID: 'Mid', ADC: 'ADC', SUPPORT: 'Suporte',
 };
@@ -45,33 +43,31 @@ interface Team {
   tag: string;
   logo_url: string | null;
   owner_id: string;
-  tournament_id: string;
   players: Player[];
   inscricoes: Inscricao[];
 }
 
 export default function PainelCapitaoPage() {
-  const params    = useParams();
-  const teamId    = params.id as string;
-  const router    = useRouter();
-  const supabase  = useMemo(() => createClient(), []);
+  const params   = useParams();
+  const teamId   = params.id as string;
+  const router   = useRouter();
+  const supabase = useMemo(() => createClient(), []);
 
-  const [team, setTeam]     = useState<Team | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState('');
-  const [savingRole, setSavingRole] = useState<string | null>(null);
+  const [team, setTeam]         = useState<Team | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+  const [savingRole, setSavingRole]   = useState<string | null>(null);
+  const [savedRole, setSavedRole]     = useState<string | null>(null); // feedback visual
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
-      setUserId(user.id);
 
       const { data, error: err } = await supabase
         .from('teams')
         .select(`
-          id, name, tag, logo_url, owner_id, tournament_id,
+          id, name, tag, logo_url, owner_id,
           players ( id, summoner_name, tag_line, role, tier, rank, lp, wins, losses, puuid ),
           inscricoes (
             id, status, checked_in, checked_in_at, tournament_id,
@@ -82,9 +78,10 @@ export default function PainelCapitaoPage() {
         .single();
 
       if (err || !data) { setError('Time não encontrado.'); setLoading(false); return; }
+      // RLS garante no banco, mas mantemos a guarda no client para UX imediata
       if (data.owner_id !== user.id) { setError('Apenas o capitão pode acessar este painel.'); setLoading(false); return; }
 
-      setTeam(data as any);
+      setTeam(data as unknown as Team);
       setLoading(false);
     }
     load();
@@ -92,11 +89,21 @@ export default function PainelCapitaoPage() {
 
   async function handleRoleChange(playerId: string, newRole: string) {
     setSavingRole(playerId);
-    await supabase.from('players').update({ role: newRole }).eq('id', playerId);
-    setTeam(prev => prev ? {
-      ...prev,
-      players: prev.players.map(p => p.id === playerId ? { ...p, role: newRole } : p),
-    } : prev);
+    setSavedRole(null);
+    const { error: updateErr } = await supabase
+      .from('players')
+      .update({ role: newRole })
+      .eq('id', playerId);
+
+    if (!updateErr) {
+      setTeam(prev => prev ? {
+        ...prev,
+        players: prev.players.map(p => p.id === playerId ? { ...p, role: newRole } : p),
+      } : prev);
+      setSavedRole(playerId);
+      // Apaga o feedback após 2s
+      setTimeout(() => setSavedRole(null), 2000);
+    }
     setSavingRole(null);
   }
 
@@ -120,7 +127,7 @@ export default function PainelCapitaoPage() {
 
   const insc = team.inscricoes[0] as Inscricao | undefined;
   const statusColor: Record<string, string> = {
-    PENDING: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
+    PENDING:  'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
     APPROVED: 'text-green-400 bg-green-400/10 border-green-400/30',
     REJECTED: 'text-red-400 bg-red-400/10 border-red-400/30',
   };
@@ -170,9 +177,7 @@ export default function PainelCapitaoPage() {
 
         {/* Jogadores */}
         <div className="card-lol space-y-3">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-white font-bold">👥 Jogadores ({team.players.length}/5)</h2>
-          </div>
+          <h2 className="text-white font-bold mb-2">👥 Jogadores ({team.players.length}/5)</h2>
 
           {team.players.length === 0 && (
             <p className="text-gray-500 text-sm text-center py-4">Nenhum jogador no time ainda.</p>
@@ -182,6 +187,7 @@ export default function PainelCapitaoPage() {
             const total = p.wins + p.losses;
             const wr = total > 0 ? Math.round((p.wins / total) * 100) : 0;
             const tierColor = TIER_COLORS[p.tier?.toUpperCase()] ?? 'text-gray-400';
+            const justSaved = savedRole === p.id;
 
             return (
               <div
@@ -200,16 +206,23 @@ export default function PainelCapitaoPage() {
                     {p.tier} {p.rank} · {p.lp} LP · {p.wins}W/{p.losses}L · {wr}% WR
                   </p>
                 </div>
-                <select
-                  value={p.role}
-                  onChange={e => handleRoleChange(p.id, e.target.value)}
-                  disabled={savingRole === p.id}
-                  className="bg-[#1E2A3A] border border-[#1E3A5F] text-gray-300 text-xs rounded px-2 py-1"
-                >
-                  {Object.entries(ROLE_LABELS).map(([val, label]) => (
-                    <option key={val} value={val}>{label}</option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  {justSaved && (
+                    <span className="text-green-400 text-xs">✓ Salvo</span>
+                  )}
+                  <select
+                    value={p.role}
+                    onChange={e => handleRoleChange(p.id, e.target.value)}
+                    disabled={savingRole === p.id}
+                    className={`bg-[#1E2A3A] border text-gray-300 text-xs rounded px-2 py-1 transition-colors ${
+                      justSaved ? 'border-green-500/50' : 'border-[#1E3A5F]'
+                    }`}
+                  >
+                    {Object.entries(ROLE_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             );
           })}

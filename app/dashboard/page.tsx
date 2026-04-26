@@ -23,7 +23,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ error?: string }>
 }) {
   const supabase = await createClient();
-  const params = await searchParams;
+  const params   = await searchParams;
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -50,7 +50,7 @@ export default async function DashboardPage({
     .limit(1)
     .maybeSingle();
 
-  // Busca times onde o usuário é CAPITÃO (owner), com status de inscrição e check-in
+  // Times onde o usuário é capitão (owner)
   const { data: myOwnedTeams } = await supabase
     .from("teams")
     .select(`
@@ -62,13 +62,20 @@ export default async function DashboardPage({
     .eq("owner_id", user.id)
     .limit(10);
 
-  // Times onde é membro (mas não capitão)
-  const { data: myMemberTeams } = await supabase
-    .from("inscricoes")
-    .select("id, status, team_id, tournament_id, teams:team_id(id, name, tag), tournaments:tournament_id(id, name, slug, status)")
-    .eq("requested_by", user.id)
-    .not("team_id", "in", `(${(myOwnedTeams ?? []).map((t: any) => t.id).join(',') || '00000000-0000-0000-0000-000000000000'})`)
-    .limit(5);
+  // Times onde é apenas membro — query segura: só executa se houver times próprios
+  const ownedIds = (myOwnedTeams ?? []).map((t: any) => t.id);
+  const { data: myMemberTeams } = ownedIds.length > 0
+    ? await supabase
+        .from("inscricoes")
+        .select("id, status, team_id, tournament_id, teams:team_id(id, name, tag), tournaments:tournament_id(id, name, slug, status)")
+        .eq("requested_by", user.id)
+        .not("team_id", "in", `(${ownedIds.join(',')})`)
+        .limit(5)
+    : await supabase
+        .from("inscricoes")
+        .select("id, status, team_id, tournament_id, teams:team_id(id, name, tag), tournaments:tournament_id(id, name, slug, status)")
+        .eq("requested_by", user.id)
+        .limit(5);
 
   const rankSolo = (riotAccount?.rank_snapshots as any[])?.find(
     (r: any) => r.queue_type === "RANKED_SOLO_5x5"
@@ -181,8 +188,8 @@ export default async function DashboardPage({
         {myOwnedTeams && myOwnedTeams.length > 0 ? (
           <div className="space-y-3">
             {myOwnedTeams.map((team: any) => {
-              const insc = team.inscricoes?.[0];
-              const tourn = insc?.tournaments;
+              const insc   = team.inscricoes?.[0];
+              const tourn  = insc?.tournaments;
               const statusKey = insc?.status ?? 'PENDING';
               return (
                 <div key={team.id} className="bg-[#0A1628] rounded-lg p-3 flex items-center gap-3 flex-wrap">
@@ -228,7 +235,7 @@ export default async function DashboardPage({
           <p className="text-gray-400 text-sm">Você ainda não criou nenhum time.</p>
         )}
 
-        {/* Times onde é apenas membro */}
+        {/* Membro em outros times */}
         {myMemberTeams && myMemberTeams.length > 0 && (
           <div className="mt-4 pt-4 border-t border-[#1E3A5F]">
             <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Participando como membro</p>
