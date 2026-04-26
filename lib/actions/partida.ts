@@ -42,7 +42,6 @@ async function avancarVencedor(supabase: any, match: any, winnerId: string) {
   const proximoRound = round + 1;
   const proximaPartidaNum = Math.ceil(match_number / 2);
 
-  // Verifica se já existe partida na próxima rodada
   const { data: proximaPartida } = await supabase
     .from("matches")
     .select("id, team_a_id, team_b_id")
@@ -52,17 +51,11 @@ async function avancarVencedor(supabase: any, match: any, winnerId: string) {
     .maybeSingle();
 
   if (proximaPartida) {
-    // Preenche o slot vazio (team_a ou team_b) com o vencedor
     const update = proximaPartida.team_a_id == null
       ? { team_a_id: winnerId }
       : { team_b_id: winnerId };
-    await supabase
-      .from("matches")
-      .update(update)
-      .eq("id", proximaPartida.id);
+    await supabase.from("matches").update(update).eq("id", proximaPartida.id);
   } else {
-    // Cria a partida da próxima rodada com o vencedor no slot A
-    // O outro slot será preenchido quando a partida espelho finalizar
     const isSlotA = match_number % 2 !== 0;
     await supabase.from("matches").insert({
       tournament_id,
@@ -76,7 +69,6 @@ async function avancarVencedor(supabase: any, match: any, winnerId: string) {
   }
 }
 
-// Mantém compatibilidade com PartidaResultForm existente
 export async function editarResultadoPartida(
   matchDbId: string,
   tournamentId: string,
@@ -101,7 +93,7 @@ export async function updateResultadoPartida(
 
     const { score_a, score_b, winner_team_id, match_id_riot } = parsed.data;
 
-    // Busca partida atual — inclui team_a_id e team_b_id para Picks & Bans
+    // FIX: inclui team_a_id e team_b_id no select para uso no picks_bans
     const { data: match, error: errMatch } = await supabase
       .from("matches")
       .select("id, round, match_number, tournament_id, best_of, team_a_id, team_b_id")
@@ -124,33 +116,50 @@ export async function updateResultadoPartida(
 
     if (error) return { error: error.message };
 
-    // Avança vencedor para próxima rodada
     await avancarVencedor(supabase, match, winner_team_id);
 
-    // Picks & Bans (opcional)
+    // FIX: picks_bans não é tabela separada — é campo JSONB dentro de match_games.
+    // Agrupamos por game_number (padrão: game 1) e fazemos upsert no campo picks_bans
+    // da tabela match_games usando o game já existente ou criando um novo.
     const picksBansRaw = formData.get("picks_bans");
     if (picksBansRaw) {
       try {
         const picksBans = JSON.parse(picksBansRaw as string);
         if (Array.isArray(picksBans) && picksBans.length > 0) {
-          const rows = picksBans
+          // Enriquece cada entrada com team_id resolvido antes de salvar no JSONB
+          const enriched = picksBans
             .filter((pb: any) => pb.champion)
             .map((pb: any) => ({
-              match_id: matchDbId,
-              tournament_id: tournamentId,
-              team_id: pb.team === 'A' ? match.team_a_id : match.team_b_id,
-              champion: pb.champion,
-              type: pb.type,
-              order: pb.order,
+              ...pb,
+              team_id: pb.team === "A" ? match.team_a_id : match.team_b_id,
             }));
-          if (rows.length > 0) {
-            await supabase.from("picks_bans").insert(rows);
+
+          if (enriched.length > 0) {
+            // Upsert no campo JSONB picks_bans da match_game correspondente (game_number=1 por padrão)
+            const { data: existingGame } = await supabase
+              .from("match_games")
+              .select("id")
+              .eq("match_id", matchDbId)
+              .eq("game_number", 1)
+              .maybeSingle();
+
+            if (existingGame) {
+              await supabase
+                .from("match_games")
+                .update({ picks_bans: enriched })
+                .eq("id", existingGame.id);
+            } else {
+              await supabase.from("match_games").insert({
+                match_id: matchDbId,
+                game_number: 1,
+                picks_bans: enriched,
+              });
+            }
           }
         }
       } catch (_) { /* ignora erro de parse de picks_bans */ }
     }
 
-    // Busca slug do torneio para revalidatePath correto
     const { data: torneio } = await supabase
       .from("tournaments")
       .select("slug")
@@ -291,7 +300,7 @@ export async function gerarChaveamento(tournamentId: string, faseId?: string) {
       const timeA = times[i * 2];
       const timeB = times[i * 2 + 1];
       if (!timeA) continue;
-      if (!timeB) continue; // BYE
+      if (!timeB) continue;
       partidas.push({
         tournament_id: tournamentId,
         team_a_id: timeA.team_id,
