@@ -180,18 +180,96 @@ export async function getMatchById(matchId: string): Promise<MatchDto> {
   return data;
 }
 
-// ─── Asset URLs ───────────────────────────────────────────────────────────────
+// ─── Asset URLs — Data Dragon (sem API Key) ───────────────────────────────────
+
+/** Ícone circular de perfil do invocador */
 export async function profileIconUrl(id: number): Promise<string> {
   const v = await getDDVersion();
   return `https://ddragon.leagueoflegends.com/cdn/${v}/img/profileicon/${id}.png`;
 }
 
+/** Ícone quadrado do campeão (usado em cartas, listas) */
 export async function championIconUrl(name: string): Promise<string> {
   const v = await getDDVersion();
   return `https://ddragon.leagueoflegends.com/cdn/${v}/img/champion/${name}.png`;
 }
 
+/**
+ * Splash art do campeão.
+ * @param name  Nome exato do campeão (ex: "Ahri", "MissFortune")
+ * @param skinNum  0 = skin base, 1+ = skins numeradas
+ */
+export function championSplashUrl(name: string, skinNum = 0): string {
+  return `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${name}_${skinNum}.jpg`;
+}
+
+/**
+ * Imagem de loading screen do campeão.
+ * @param name  Nome exato do campeão
+ * @param skinNum  0 = skin base, 1+ = skins numeradas
+ */
+export function championLoadingUrl(name: string, skinNum = 0): string {
+  return `https://ddragon.leagueoflegends.com/cdn/img/champion/loading/${name}_${skinNum}.jpg`;
+}
+
+/** Ícone de item (útil para exibir item0–item6 em MatchParticipant) */
+export async function itemIconUrl(itemId: number): Promise<string> {
+  const v = await getDDVersion();
+  return `https://ddragon.leagueoflegends.com/cdn/${v}/img/item/${itemId}.png`;
+}
+
+/** Ícone de summoner spell (ex: "SummonerFlash", "SummonerIgnite") */
+export async function summonerSpellIconUrl(spellId: string): Promise<string> {
+  const v = await getDDVersion();
+  return `https://ddragon.leagueoflegends.com/cdn/${v}/img/spell/${spellId}.png`;
+}
+
+// ─── Asset URLs — CommunityDragon (sem API Key) ───────────────────────────────
+
+/**
+ * Emblema de rank (tier).
+ * @param tier  ex: "iron", "bronze", "silver", "gold", "platinum",
+ *              "emerald", "diamond", "master", "grandmaster", "challenger"
+ */
+export function rankEmblemUrl(tier: string): string {
+  const t = tier.toLowerCase();
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/ranked-mini-regalia/${t}.png`;
+}
+
+/**
+ * Ícone visual do nível de maestria do campeão (1–10).
+ * @param level  Nível de maestria (1 a 10)
+ */
+export function masteryIconUrl(level: number): string {
+  const clamped = Math.min(Math.max(level, 1), 10);
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champion-mastery/global/default/mastery-${clamped}.png`;
+}
+
+// ─── Data Dragon: JSON estático ───────────────────────────────────────────────
+
+/**
+ * Retorna todos os campeões do jogo em português (pt_BR).
+ * Útil para seletores de campeão, filtros e listagens no painel de torneio.
+ * Cache de 1 hora — dados mudam apenas em novos patches.
+ */
+export async function getAllChampions(): Promise<Record<string, ChampionBasic>> {
+  const cacheKey = "dd:champions:pt_BR";
+  const cached = getCached<Record<string, ChampionBasic>>(cacheKey);
+  if (cached) return cached;
+
+  const v = await getDDVersion();
+  const res = await fetch(
+    `https://ddragon.leagueoflegends.com/cdn/${v}/data/pt_BR/champion.json`,
+    { next: { revalidate: 3600 } }
+  );
+  const json = await res.json();
+  const data: Record<string, ChampionBasic> = json.data;
+  setCached(cacheKey, data, 3600);
+  return data;
+}
+
 // ─── Interfaces ───────────────────────────────────────────────────────────────
+
 export interface RiotAccount {
   puuid: string;
   gameName: string;
@@ -228,6 +306,25 @@ export interface ChampionMastery {
   championLevel: number;
   championPoints: number;
   lastPlayTime: number;
+}
+
+export interface ChampionBasic {
+  id: string;
+  key: string;
+  name: string;
+  title: string;
+  blurb: string;
+  tags: string[];
+  image: {
+    full: string;
+    sprite: string;
+    group: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  };
+  stats: Record<string, number>;
 }
 
 export interface MatchDto {
