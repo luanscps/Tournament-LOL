@@ -36,7 +36,6 @@ function getRegion(): string {
 
 function getRegionalHost(): string {
   const region = getRegion();
-  // ─── CORREÇÃO BUG 3: regional derivado da region, nunca fixo ──────────────
   return process.env.RIOT_REGIONAL_HOST ?? REGION_TO_REGIONAL[region] ?? "americas";
 }
 
@@ -71,7 +70,7 @@ export async function getDDVersion(): Promise<string> {
 
 // ─── Helper principal ─────────────────────────────────────────────────────────
 async function riotFetch<T>(url: string): Promise<T> {
-  const apiKey = getApiKey(); // ← CORREÇÃO BUG 1: lazy, nunca no import
+  const apiKey = getApiKey();
 
   const res = await fetch(url, {
     headers: { "X-Riot-Token": apiKey },
@@ -124,7 +123,6 @@ export async function getLeagueEntriesByPuuid(puuid: string): Promise<LeagueEntr
   const cached = getCached<LeagueEntry[]>(key);
   if (cached) return cached;
 
-  // ─── CORREÇÃO BUG 2: usa /by-puuid direto, sem buscar summoner antes ──────
   const data = await riotFetch<LeagueEntry[]>(
     getPlatformUrl() + "/lol/league/v4/entries/by-puuid/" + puuid
   );
@@ -188,28 +186,45 @@ export async function profileIconUrl(id: number): Promise<string> {
   return `https://ddragon.leagueoflegends.com/cdn/${v}/img/profileicon/${id}.png`;
 }
 
-/** Ícone quadrado do campeão (usado em cartas, listas) */
-export async function championIconUrl(name: string): Promise<string> {
+/**
+ * Ícone quadrado do campeão (usado em cartas, listas).
+ *
+ * FIX: guard contra name null/undefined — retorna placeholder genérico.
+ * O nome deve ser exatamente o "id" do DataDragon (ex: "MissFortune", "Ahri").
+ * Campeões sem nome salvo no DB recebem o ícone de placeholder do DD.
+ */
+export async function championIconUrl(name: string | null | undefined): Promise<string> {
   const v = await getDDVersion();
-  return `https://ddragon.leagueoflegends.com/cdn/${v}/img/champion/${name}.png`;
+  if (!name || name === "null" || name.trim() === "") {
+    // Retorna ícone genérico: champion -1 é o placeholder oficial do DataDragon
+    return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champion-icons/-1.png`;
+  }
+  // DataDragon usa o ID do campeão (ex: "MissFortune"), não o displayName
+  // Normaliza: remove espaços e caracteres especiais para os campeões com nome composto
+  const normalized = name.replace(/[^a-zA-Z0-9]/g, "");
+  return `https://ddragon.leagueoflegends.com/cdn/${v}/img/champion/${normalized}.png`;
 }
 
 /**
  * Splash art do campeão.
- * @param name  Nome exato do campeão (ex: "Ahri", "MissFortune")
+ * @param name     Nome exato do campeão (ex: "Ahri", "MissFortune")
  * @param skinNum  0 = skin base, 1+ = skins numeradas
  */
-export function championSplashUrl(name: string, skinNum = 0): string {
-  return `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${name}_${skinNum}.jpg`;
+export function championSplashUrl(name: string | null | undefined, skinNum = 0): string {
+  if (!name || name === "null") return "";
+  const normalized = name.replace(/[^a-zA-Z0-9]/g, "");
+  return `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${normalized}_${skinNum}.jpg`;
 }
 
 /**
  * Imagem de loading screen do campeão.
- * @param name  Nome exato do campeão
+ * @param name     Nome exato do campeão
  * @param skinNum  0 = skin base, 1+ = skins numeradas
  */
-export function championLoadingUrl(name: string, skinNum = 0): string {
-  return `https://ddragon.leagueoflegends.com/cdn/img/champion/loading/${name}_${skinNum}.jpg`;
+export function championLoadingUrl(name: string | null | undefined, skinNum = 0): string {
+  if (!name || name === "null") return "";
+  const normalized = name.replace(/[^a-zA-Z0-9]/g, "");
+  return `https://ddragon.leagueoflegends.com/cdn/img/champion/loading/${normalized}_${skinNum}.jpg`;
 }
 
 /** Ícone de item (útil para exibir item0–item6 em MatchParticipant) */
@@ -227,22 +242,31 @@ export async function summonerSpellIconUrl(spellId: string): Promise<string> {
 // ─── Asset URLs — CommunityDragon (sem API Key) ───────────────────────────────
 
 /**
- * Emblema de rank (tier).
- * @param tier  ex: "iron", "bronze", "silver", "gold", "platinum",
- *              "emerald", "diamond", "master", "grandmaster", "challenger"
+ * Emblema de rank (tier) — ícone grande estilo in-client.
+ *
+ * FIX: path correto via rcp-fe-lol-static-assets.
+ * URL verificada: /plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/emblem-{tier}.png
+ *
+ * @param tier  ex: "IRON", "BRONZE", "GOLD", "PLATINUM", "EMERALD",
+ *              "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"
  */
 export function rankEmblemUrl(tier: string): string {
   const t = tier.toLowerCase();
-  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/ranked-mini-regalia/${t}.png`;
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/emblem-${t}.png`;
 }
 
 /**
  * Ícone visual do nível de maestria do campeão (1–10).
+ *
+ * FIX: path correto via rcp-fe-lol-static-assets/champion-mastery.
+ * URL verificada: /plugins/rcp-fe-lol-static-assets/global/default/champion-mastery/mastery_{level}.png
+ * Níveis 1–10 disponíveis. Clamped entre 1 e 10 por segurança.
+ *
  * @param level  Nível de maestria (1 a 10)
  */
 export function masteryIconUrl(level: number): string {
   const clamped = Math.min(Math.max(level, 1), 10);
-  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champion-mastery/global/default/mastery-${clamped}.png`;
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/champion-mastery/mastery_${clamped}.png`;
 }
 
 // ─── Data Dragon: JSON estático ───────────────────────────────────────────────
