@@ -11,8 +11,8 @@ Backlog organizado por prioridade. Marque como `[x]` conforme for implementando.
 - [x] Corrigir link "+ Inscrever meu time" na dashboard (`/dashboard/times/criar` — plural)
 - [x] Corrigir UPDATE de torneio para usar `start_date`/`end_date` (não as colunas GENERATED)
 - [x] Corrigir redirecionamento pós-criação de torneio para `/torneios/{id}/inscricoes`
-- [ ] Migrar `lib/actions/inscricao.ts` de `tournament_teams` → `inscricoes`
-- [ ] Corrigir referências a `summonername`/`tagline` (sem underscore) nos componentes antigos
+- [x] `lib/actions/inscricao.ts` já usa `inscricoes` em 100% dos lugares — sem referência a `tournament_teams`
+- [x] Todos os componentes já usam `summoner_name` / `tag_line` (com underscore) — verificado em `TeamCard.tsx`, `jogadores/[puuid]/page.tsx`, `api/admin/jogadores/route.ts`
 
 ---
 
@@ -42,6 +42,15 @@ Backlog organizado por prioridade. Marque como `[x]` conforme for implementando.
 
 ---
 
+## ✅ Sprint 3 — Em andamento
+
+- [x] `020_team_roster.sql` — `team_invites` + RLS + `accept_team_invite()` RPC + trigger expiração
+- [ ] UI roster do capitão — `app/dashboard/times/[id]/roster/page.tsx`
+- [ ] Componente `InvitePlayerForm` — `components/times/InvitePlayerForm.tsx`
+- [ ] Página de convites recebidos — `app/dashboard/convites/page.tsx`
+
+---
+
 ## ✅ Concluídos (histórico)
 
 | Data | Item |
@@ -52,3 +61,5 @@ Backlog organizado por prioridade. Marque como `[x]` conforme for implementando.
 | 2026-04-25 | Fix link inscrição (`time` → `times`), fix editar torneio (`starts_at` → `start_date`) |
 | 2026-04-25 | Redirect pós-criação de torneio → `/torneios/{id}/inscricoes` |
 | 2026-04-26 | Documentação completa criada/atualizada em `/docs` |
+| 2026-04-26 | Sprint 3: `020_team_roster.sql` — team_invites, RLS, RPC accept_team_invite |
+| 2026-04-26 | Bugs blockers confirmados como já resolvidos no código (inscricao.ts + summonername) |
