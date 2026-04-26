@@ -27,6 +27,25 @@ function rankEmblemMiniUrl(tier: string): string {
   return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-mini-crests/${tier.toLowerCase()}.png`;
 }
 
+/**
+ * URL da moldura de nível via CommunityDragon.
+ * As molduras oficiais estão em:
+ * https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/level-borders/
+ * Faixas: 0-29, 30-49, 50-99, 100-149, 150-199, 200-299, 300-399, 400-499, 500+
+ */
+function profileLevelBorderUrl(level: number): string {
+  const base = "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/level-borders";
+  if (level >= 500) return `${base}/summoner-levelborder-500.png`;
+  if (level >= 400) return `${base}/summoner-levelborder-400.png`;
+  if (level >= 300) return `${base}/summoner-levelborder-300.png`;
+  if (level >= 200) return `${base}/summoner-levelborder-200.png`;
+  if (level >= 150) return `${base}/summoner-levelborder-150.png`;
+  if (level >= 100) return `${base}/summoner-levelborder-100.png`;
+  if (level >= 75)  return `${base}/summoner-levelborder-75.png`;
+  if (level >= 50)  return `${base}/summoner-levelborder-50.png`;
+  return                    `${base}/summoner-levelborder-0.png`;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -95,22 +114,16 @@ export default async function DashboardPage({
     .sort((a: any, b: any) => b.mastery_points - a.mastery_points)
     .slice(0, 5);
 
-  // ── Resolver nomes de campeões via Data Dragon ───────────────────────────────
-  // O campo champion_name no banco pode estar null (registros antigos)
-  // ou conter o nome interno ("MonkeyKing"). Buscamos o nome display (pt_BR)
-  // pelo champion_id numérico usando o JSON estático do Data Dragon.
   let champById: Record<number, string> = {};
   if (topMasteries.length > 0) {
     try {
-      const all = await getAllChampions(); // pt_BR, cachado 1h
-      // Monta map: key numérico → nome display
+      const all = await getAllChampions();
       for (const c of Object.values(all)) {
-        champById[Number(c.key)] = c.name; // c.key é string "266" etc.
+        champById[Number(c.key)] = c.name;
       }
     } catch { /* fallback: usa champion_name do banco */ }
   }
 
-  // ── Asset URLs ──────────────────────────────────────────────────────────────
   const profileIcon = riotAccount?.profile_icon_id
     ? await profileIconUrl(riotAccount.profile_icon_id)
     : null;
@@ -119,7 +132,10 @@ export default async function DashboardPage({
     ? profileIconBorderStyle(riotAccount.summoner_level)
     : null;
 
-  // Nome display do campeão principal (para splash)
+  const levelBorderUrl = riotAccount?.summoner_level
+    ? profileLevelBorderUrl(riotAccount.summoner_level)
+    : null;
+
   const mainChampDisplayName = topMasteries[0]
     ? (champById[topMasteries[0].champion_id] ?? topMasteries[0].champion_name ?? null)
     : null;
@@ -129,7 +145,6 @@ export default async function DashboardPage({
     : null;
 
   const masteryAssets = topMasteries.map((m: any) => {
-    // Prioridade: Data Dragon pt_BR > champion_name do banco
     const displayName = champById[m.champion_id] ?? m.champion_name ?? `#${m.champion_id}`;
     return {
       ...m,
@@ -140,13 +155,30 @@ export default async function DashboardPage({
     };
   });
 
+  /* ── tamanho do contêiner do ícone de perfil ────────────────────────────────
+   * A moldura CommunityDragon (summoner-levelborder-*.png) é uma imagem
+   * quadrada que cobre o ícone circular. Usamos position:absolute para sobrepor
+   * a moldura ao ícone, sem clip-path, mantendo a imagem oficial do jogo.
+   *
+   * Dimensões escolhidas:
+   *   - Ícone interno: 80×80 px  (centralizado)
+   *   - Moldura:       112×112 px (sobreposta, cobre as bordas do ícone)
+   *   - Container:     112×112 px
+   *
+   * O badge de nível fica abaixo do container, sobrepondo a parte inferior
+   * da moldura exatamente como no cliente LoL.
+   */
+
   return (
     <div className="space-y-8">
 
       <style>{`
-        @keyframes profile-frame-pulse {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.65; }
+        @keyframes profile-glow-pulse {
+          0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px var(--glow-color)); }
+          50%       { opacity: 0.80; filter: drop-shadow(0 0 14px var(--glow-color)); }
+        }
+        .profile-border-img {
+          animation: profile-glow-pulse 2.6s ease-in-out infinite;
         }
       `}</style>
 
@@ -162,52 +194,69 @@ export default async function DashboardPage({
 
       {/* ── Perfil ─────────────────────────────────────────────────────────── */}
       <div className="card-lol flex items-center gap-6 flex-wrap">
-        <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }}>
+
+        {/* ── Ícone de perfil com moldura de nível ────────────────────────── */}
+        <div style={{ position: "relative", width: 112, height: 128, flexShrink: 0 }}>
           {profileIcon ? (
             <>
+              {/* Ícone circular, centralizado dentro do container da moldura */}
               <img
                 src={profileIcon}
-                width={90}
-                height={90}
+                width={80}
+                height={80}
                 alt="Ícone de Perfil Riot"
                 style={{
                   position: "absolute",
-                  top: 3, left: 3,
-                  width: 90, height: 90,
+                  top: 10, left: 16,
+                  width: 80, height: 80,
                   borderRadius: "50%",
                   display: "block",
+                  zIndex: 1,
                 }}
               />
-              {borderStyle && (
-                <span
+
+              {/* Moldura de nível oficial via CommunityDragon */}
+              {levelBorderUrl && (
+                <img
+                  src={levelBorderUrl}
+                  width={112}
+                  height={112}
+                  alt=""
                   aria-hidden="true"
+                  className="profile-border-img"
                   style={{
                     position: "absolute",
-                    inset: 0,
-                    borderRadius: "50%",
-                    border: `3px solid ${borderStyle.color}`,
-                    boxShadow: `0 0 12px 4px ${borderStyle.glow}, inset 0 0 8px 2px ${borderStyle.glow}`,
-                    animation: "profile-frame-pulse 2.4s ease-in-out infinite",
-                    zIndex: 10,
-                    pointerEvents: "none",
+                    top: 0, left: 0,
+                    width: 112, height: 112,
                     display: "block",
+                    zIndex: 2,
+                    pointerEvents: "none",
+                    // CSS custom property para o drop-shadow animado
+                    ["--glow-color" as string]: borderStyle?.glow ?? "rgba(200,168,75,0.6)",
+                  } as React.CSSProperties}
+                  onError={(e) => {
+                    // Fallback silencioso: esconde a moldura se a imagem falhar
+                    (e.target as HTMLImageElement).style.display = "none";
                   }}
                 />
               )}
+
+              {/* Badge de nível — abaixo da moldura */}
               <span
                 style={{
                   position: "absolute",
-                  bottom: -8, left: "50%",
+                  bottom: 0, left: "50%",
                   transform: "translateX(-50%)",
-                  zIndex: 20,
+                  zIndex: 3,
                   background: "#0A1428",
-                  border: `1px solid ${borderStyle?.color ?? "#C8A84B"}`,
+                  border: `1.5px solid ${borderStyle?.color ?? "#C8A84B"}`,
                   color: borderStyle?.color ?? "#C8A84B",
-                  fontSize: 10, fontWeight: 700,
-                  padding: "1px 7px",
+                  fontSize: 11, fontWeight: 700,
+                  padding: "2px 9px",
                   borderRadius: 9999,
                   lineHeight: "16px",
                   whiteSpace: "nowrap",
+                  boxShadow: `0 0 8px ${borderStyle?.glow ?? "rgba(200,168,75,0.4)"}`,
                 }}
               >
                 Nv. {riotAccount?.summoner_level}
@@ -217,6 +266,7 @@ export default async function DashboardPage({
             <div className="w-20 h-20 rounded-full bg-[#1E3A5F] flex items-center justify-center text-3xl">👤</div>
           )}
         </div>
+        {/* ── fim ícone ───────────────────────────────────────────────────── */}
 
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white truncate">
@@ -345,7 +395,6 @@ export default async function DashboardPage({
                       </span>
                     </div>
 
-                    {/* Nome do campeão — Data Dragon pt_BR */}
                     <p style={{
                       fontSize: 12,
                       color: "#d1d5db",
@@ -360,7 +409,6 @@ export default async function DashboardPage({
                       {m.displayName}
                     </p>
 
-                    {/* Pontos de maestria */}
                     <p style={{
                       fontSize: 11,
                       color: m.masteryColor,
