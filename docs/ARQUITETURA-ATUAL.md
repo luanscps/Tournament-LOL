@@ -1,156 +1,273 @@
-# Arquitetura atual — GerenciadorDeTorneios BRLOL
+# Arquitetura Atual — GerenciadorDeTorneios BRLOL
 
-> Snapshot baseado no dump `sql/2026-04-25_122855.sql`, nas migrations Supabase `001`–`012` e no código da branch `main` (commit 90be28d3…).[cite:22][cite:24][cite:26][cite:31][cite:32][cite:33]
+> Atualizado em: **2026-04-26**  
+> Branch de referência: `main`  
+> Migrations aplicadas: `001` → `012`
+
+---
 
 ## Stack
 
-| Camada      | Tecnologia                                      |
-|-------------|-------------------------------------------------|
-| Frontend    | Next.js 15.2.6 (App Router)                     |
-| UI          | React 19 + Tailwind CSS 3.4                     |
-| Auth/Banco  | Supabase (Postgres 17, RLS habilitado)          |
-| Realtime    | Supabase Realtime                               |
-| Edge/Jobs   | Supabase Edge Functions                         |
-| Deploy      | Vercel                                          |
-| Forms/Validação | react-hook-form + zod                       |
-| Charts      | Recharts                                       |
-
-As versões de Next.js, React, Tailwind e dependências vêm de `package.json`.[cite:38]
-
----
-
-## Domínio principal
-
-Entidades centrais do sistema (apenas schema `public`):[cite:31][cite:32][cite:33]
-
-- `profiles` — espelha `auth.users` e guarda metadados do usuário (admin, banimento, nick Riot padrão).
-- `tournaments` — torneios de LoL com slug, status, configurações de chave, datas e metadados visuais.
-- `teams` — times inscritos em um torneio específico (FK obrigatória `tournament_id`).
-- `players` — jogadores (summoner) vinculados opcionalmente a um time e usados para stats.
-- `inscricoes` — pedido de inscrição de um time em um torneio, com status e check-in.
-- `matches` — partidas de um torneio (inclui round, ordem, formato BO1/3/5 e times A/B).
-- `tournament_stages` — fases de um torneio (grupos, playoffs, etc.), usadas para organizar `matches`.
-- `match_games` — cada jogo individual dentro de uma série (ex.: BO3), ligado a `matches`.
-- `player_stats` — estatísticas por jogador por jogo (`kills`, `deaths`, `assists`, etc.).
-- `notifications` — notificações in‑app por usuário, integradas ao Realtime.
-- `audit_log` — trilha de auditoria de ações administrativas.
-- `riot_accounts` — contas Riot vinculadas a um `profile`, com controle de conta primária.
-- `rank_snapshots` — snapshots de elo/rank por conta Riot e fila.
-- `champion_masteries` — maestria de campeões por conta Riot.
-
-Há também views derivadas para standings por fase (`v_stage_standings`) e KDA médio por torneio (`v_player_tournament_kda`).[cite:32]
+| Camada | Tecnologia |
+|---|---|
+| Frontend | Next.js 15.2.6 (App Router) |
+| UI | React 19 + Tailwind CSS 3.4 |
+| Auth / Banco | Supabase (Postgres 17, RLS habilitado) |
+| Realtime | Supabase Realtime |
+| Edge / Jobs | Supabase Edge Functions |
+| Deploy | Vercel |
+| Formulários | react-hook-form + zod |
+| Charts | Recharts |
+| HTTP Client | fetch nativo (Next.js server actions) |
 
 ---
 
-## Rotas principais (App Router)
+## Modelo de Rotas Dinâmicas
 
-Estrutura de pastas sob `app/`:[cite:27]
+| Entidade | Pasta | Parâmetro | Tipo de valor | Consulta no banco |
+|---|---|---|---|---|
+| Torneio (público) | `app/torneios/[slug]` | `slug` | slug textual (`lol-cup-abril-2026`) | `.eq("slug", slug)` |
+| Torneio (organizador) | `app/organizador/torneios/[id]` | `id` | UUID | `.eq("id", id)` |
+| Torneio (admin) | `app/admin/torneios/[slug]` | `slug` | slug textual | `.eq("slug", slug)` |
+| Time (público) | `app/times/[slug]` | `slug` | UUID (slug real previsto em 013) | `.eq("id", slug)` |
+| Admin Jogadores | `app/admin/jogadores/[slug]` | `slug` | UUID | `.eq("id", slug)` |
+| Admin Usuários | `app/admin/usuarios/[slug]` | `slug` | UUID | `.eq("id", slug)` |
 
-- Público geral
-  - `app/page.tsx` — landing page do projeto.
-  - `app/torneios` — listagem e páginas públicas de torneios.
-  - `app/times` — listagem e páginas públicas de times.
-  - `app/ranking` — telas de ranking/estatísticas globais.
-  - `app/jogadores` — consulta pública de jogadores.
-- Dashboard do usuário autenticado
-  - `app/dashboard/page.tsx` — visão geral pessoal (meus torneios/times/convites).[cite:39]
-  - `app/dashboard/times` — gerenciamento de times do usuário.
-  - `app/dashboard/jogador` — visão de conta Riot/jogador vinculada ao profile.
-- Área de autenticação
-  - `app/(auth)/login`, `app/(auth)/register`, etc. — fluxo de login/registro.
-- Console administrativo
-  - `app/admin/page.tsx` — visão geral administrativa.[cite:40]
-  - `app/admin/torneios` — CRUD de torneios, fases e partidas.
-  - `app/admin/jogadores` — ferramentas administrativas para jogadores.
-  - `app/admin/usuarios` — gestão de profiles/admins.
-  - `app/admin/audit` — visualização de `audit_log`.
+**Regra:** Sempre extraia `tournamentId = t.id` (UUID) a partir do slug e use esse UUID em todas as queries relacionais. Nunca passe o slug textual como FK.
 
-As rotas usam o padrão App Router, com layouts específicos para as seções pública, dashboard e admin (`app/layout.tsx`, `app/admin/layout.tsx`).[cite:27][cite:40]
+---
+
+## Banco de Dados — Tabelas Principais
+
+### `profiles`
+- `id` uuid PK (= `auth.users.id`)
+- `email`, `full_name`, `avatar_url`
+- `is_admin` boolean, `is_banned` boolean
+- `riot_nick` text — nick padrão da Riot vinculado ao perfil
+
+### `tournaments`
+- `id` uuid PK
+- `slug` text NOT NULL UNIQUE — chave semântica para URLs
+- `name`, `description`, `status` (draft | open | ongoing | finished | cancelled)
+- `max_teams`, `bracket_type`, `queue_type`
+- `start_date` timestamptz, `end_date` timestamptz — colunas reais para escrita
+- `starts_at`, `ends_at` — **GENERATED** a partir de `start_date`/`end_date` (somente leitura)
+- `banner_url`, `featured` boolean
+- `created_by` uuid → profiles.id
+
+> ⚠️ **Importante:** Sempre use `start_date`/`end_date` em INSERTs e UPDATEs.  
+> `starts_at`/`ends_at` são GENERATED e causam erro se incluídos no payload de update.
+
+### `teams`
+- `id` uuid PK
+- `name`, `tag`, `logo_url`, `description`
+- `captain_id` → profiles.id
+- `tournament_id` → tournaments.id (FK obrigatória)
+- Slug real em times: **previsto na migration 013** (não aplicada ainda)
+
+### `players`
+- `id` uuid PK
+- `summoner_name` text, `tag_line` text (**com underscore** — colunas corretas no banco)
+- `puuid` text
+- `tier`, `rank`, `lp`, `wins`, `losses`, `role`
+- `team_id` → teams.id (opcional)
+
+> ⚠️ Atenção: migrations antigas escreviam `summonername`/`tagline` (sem underscore). Use sempre `summoner_name`/`tag_line`.
+
+### `inscricoes`
+- `id` uuid PK
+- `tournament_id` → tournaments.id
+- `team_id` → teams.id
+- `status` text: `pending` | `approved` | `rejected` | `eliminated`
+- `seed` int
+- `checked_in_at` timestamptz
+
+> ⚠️ Esta é a tabela real de inscrições. A tabela `tournament_teams` descrita em documentação antiga **não existe mais** no schema atual. Qualquer referência a ela deve ser migrada para `inscricoes`.
+
+### `tournament_stages`
+- `id` uuid PK
+- `tournament_id` → tournaments.id
+- `name`, `stage_type` (groups | playoffs | etc.), `order`
+
+### `matches`
+- `id` uuid PK
+- `tournament_id` → tournaments.id
+- `stage_id` → tournament_stages.id
+- `team_a_id`, `team_b_id` → teams.id
+- `winner_team_id` → teams.id
+- `score_a`, `score_b`
+- `status` text: `pending` | `ongoing` | `finished`
+- `round`, `match_number`, `format` (BO1 | BO3 | BO5)
+
+### `match_games`
+- `id` uuid PK
+- `match_id` → matches.id
+- `game_number` int
+- `winner_team_id` → teams.id
+- `duration_seconds` int
+- `riot_match_id` text — ID da partida na Riot API
+
+### `player_stats`
+- `id` uuid PK
+- `game_id` → match_games.id
+- `player_id` → players.id
+- `kills`, `deaths`, `assists` int
+- `champion`, `role`, `cs`, `gold_earned` etc.
+
+### `notifications`
+- `id` uuid PK
+- `user_id` → profiles.id
+- `type`, `message`, `read` boolean
+- `created_at` timestamptz
+
+### `audit_log`
+- `id` uuid PK
+- `action`, `target_table`, `target_id`, `performed_by`
+- `details` jsonb, `created_at`
+
+### `riot_accounts`
+- `id` uuid PK
+- `profile_id` → profiles.id
+- `puuid`, `game_name`, `tagline`, `summoner_id`
+- `is_primary` boolean
+
+### `rank_snapshots`
+- `id` uuid PK
+- `riot_account_id` → riot_accounts.id
+- `queue_type`, `tier`, `rank`, `lp`, `wins`, `losses`
+- `snapshot_at` timestamptz
+
+### `champion_masteries`
+- `id` uuid PK
+- `riot_account_id` → riot_accounts.id
+- `champion_id`, `champion_name`, `mastery_level`, `mastery_points`
+
+### Views
+- `v_stage_standings` — classificação por fase do torneio
+- `v_player_tournament_kda` — KDA médio por jogador por torneio
+
+---
+
+## Rotas Principais (App Router)
+
+```
+app/
+├── page.tsx                          # Landing pública
+├── torneios/
+│   ├── page.tsx                      # Listagem pública de torneios
+│   └── [slug]/
+│       ├── page.tsx                  # Detalhe público do torneio
+│       └── inscricoes/               # Inscrições abertas do torneio
+├── times/
+│   ├── page.tsx                      # Listagem pública de times
+│   └── [slug]/page.tsx               # Detalhe público do time
+├── jogadores/page.tsx                # Consulta pública de jogadores
+├── ranking/page.tsx                  # Rankings e estatísticas globais
+├── (auth)/
+│   ├── login/page.tsx
+│   ├── register/page.tsx
+│   └── recuperar/page.tsx
+├── dashboard/
+│   ├── page.tsx                      # Overview pessoal do usuário logado
+│   ├── times/
+│   │   ├── page.tsx                  # Meus times
+│   │   └── criar/page.tsx            # Criar time + inscrever em torneio
+│   └── jogador/
+│       └── registrar/page.tsx        # Vincular conta Riot ao profile
+├── organizador/
+│   └── torneios/
+│       ├── novo/page.tsx             # Criar torneio
+│       └── [id]/
+│           ├── page.tsx              # Editar torneio
+│           └── inscricoes/page.tsx   # Gerenciar inscrições
+└── admin/
+    ├── page.tsx                      # Overview admin
+    ├── layout.tsx                    # Layout protegido (requer is_admin)
+    ├── torneios/
+    │   ├── page.tsx
+    │   └── [slug]/page.tsx
+    ├── jogadores/
+    │   ├── page.tsx
+    │   └── [slug]/page.tsx
+    ├── usuarios/
+    │   ├── page.tsx
+    │   └── [slug]/page.tsx
+    └── audit/page.tsx
+```
 
 ---
 
 ## Acesso ao Supabase
 
-A camada de acesso ao Supabase está centralizada em `lib/supabase/*`:[cite:29]
+`lib/supabase/` contém três clients:
 
-- `client.ts` — cria o client de browser (chave `anon`, usado em componentes client‑side).
-- `server.ts` — instancia um client "por request" no servidor, reaproveitando cookies de sessão.
-- `admin.ts` — client com role de serviço (service role), usado apenas em contexts seguros (Edge Functions, scripts) para operações privilegiadas.
+| Arquivo | Uso | Chave |
+|---|---|---|
+| `client.ts` | Componentes client-side (browser) | `anon` |
+| `server.ts` | Server Components e Actions (lê cookies de sessão) | `anon` + auth session |
+| `admin.ts` | Edge Functions e scripts internos | `service_role` |
 
-A autenticação usa `supabase.auth.getUser()` nas server actions e páginas server‑side para obter o usuário autenticado e garantir RLS correta.[cite:34][cite:35]
+Nunca use o `admin.ts` em contextos expostos ao browser.
 
 ---
 
 ## Server Actions
 
-Server Actions ficam em `lib/actions/*` e encapsulam operações de escrita, com validação e `revalidatePath`.
+`lib/actions/`:
 
-### Torneios (`lib/actions/tournament.ts`)
+| Arquivo | Actions |
+|---|---|
+| `tournament.ts` | `createTournament`, `updateTournament`, `deleteTournament` — valida com zod, exige `requireAdmin()` |
+| `inscricao.ts` | `aprovarInscricao`, `rejeitarInscricao` — opera na tabela `inscricoes` |
+| `partida.ts` | `editarResultadoPartida`, `atualizarStatusPartida` |
+| `usuario.ts` | `banirUsuario`, `promoverAdmin`, `revogarAdmin` |
 
-- `TournamentSchema` (zod) valida `name`, `slug`, `max_teams`, `starts_at` e `status` antes de escrever.[cite:34]
-- `requireAdmin()` carrega o usuário via `supabase.auth.getUser()` e garante que `profiles.is_admin = true` antes de permitir a action.[cite:34]
-- `createTournament(formData)` insere em `public.tournaments` os campos validados (incluindo `slug`), retorna `id` e `slug` e chama `revalidatePath("/admin/torneios")`.
-- `updateTournament(id, formData)` atualiza o registro existente e invalida o cache tanto da listagem quanto da página de detalhes (`/admin/torneios/[id]`).
-- `deleteTournament(id)` remove o torneio e invalida a listagem.
-
-Observação: o campo `status` na tabela é `text` com default `'DRAFT'::tournament_status` e aceita text arbitrário; a action utiliza valores minúsculos (`"draft"`, `"open"`, `"checkin"`, `"ongoing"`, `"finished"`), que são coerentes com o tipo text mas diferentes do enum original maiúsculo.[cite:31][cite:34]
-
-### Inscrições (`lib/actions/inscricao.ts`)
-
-- `requireAdmin()` repete o padrão de verificar `profiles.is_admin` antes de qualquer alteração.[cite:35]
-- `aprovarInscricao(teamId, tournamentId)` e `rejeitarInscricao(teamId, tournamentId)` fazem `update` em uma tabela chamada `tournament_teams`, mudando a coluna `status` para `"approved"` ou `"rejected"` e revalidando `/admin/torneios/[id]/inscricoes`.[cite:35]
-
-**Divergência importante**: no schema atual do banco **não existe** a tabela `public.tournament_teams`; o relacionamento torneio–time é modelado por:[cite:31][cite:36]
-
-- `teams.tournament_id` (FK obrigatória para `tournaments.id`).
-- `inscricoes` (`tournament_id`, `team_id`, `status`, `checked_in_at`).
-
-Isso significa que as actions atuais de inscrição não afetam o modelo real de inscrições (`inscricoes`) e podem ser a causa de telas vazias ou dados "sumindo" na dashboard ao mudar status, pois atualizam uma tabela inexistente.
-
-### Outras actions
-
-- `lib/actions/partida.ts` — atualiza resultado de partidas (`matches`) e possivelmente gera jogos em `match_games` e stats em `player_stats`.
-- `lib/actions/usuario.ts` — atualiza dados de profile (nome completo, flags de admin/banimento etc.).[cite:30]
+Após cada action bem-sucedida, usa `revalidatePath()` para invalidar o cache da rota afetada.
 
 ---
 
-## Integração Riot API
+## Edge Functions
 
-A integração com a Riot API é feita via:
-
-- `lib/riot.ts` — client HTTP de alto nível para endpoints da Riot (summoner, ranked, match history), com tipos utilitários para respostas.[cite:28]
-- `lib/riot-cache.ts` — camada de cache in‑memory para evitar estouro de rate limit em chamadas repetidas.[cite:28]
-- Edge Functions (em `supabase/functions`) expostas como webhooks/cron para sincronização assíncrona com a Riot API (rank snapshots, masteries, etc.).[cite:25]
-- Tabelas `riot_accounts`, `rank_snapshots` e `champion_masteries` no banco para persistir dados consolidados da Riot.[cite:33]
-
-`riot_accounts` mantém o vínculo entre `profiles` e contas Riot, com:
-
-- `profile_id` → `profiles.id` (FK por UUID real).
-- Colunas de identificação: `puuid`, `game_name`, `tagline`, `summoner_id`.
-- Flags de controle: `is_primary` (garantido via trigger `ensure_single_primary_riot_account`).[cite:33]
-
-`rank_snapshots` guarda snapshots de elo/rank por conta e fila (`queue_type`), enquanto `champion_masteries` registra maestria por campeão para aquela conta.[cite:33]
+| Função | Trigger | Descrição |
+|---|---|---|
+| `bracket-generator` | POST admin | Gera partidas em single elimination |
+| `riot-api-sync` | Agendado / manual | Sincroniza rank, maestrias e histórico via Riot API |
+| `discord-webhook` | Eventos de torneio | Notifica canal Discord |
+| `send-email` | Inscrição aprovada/rejeitada | Email transacional |
 
 ---
 
-## Pontos de atenção / divergências código × banco
+## Migrations
 
-1. **Tabela `tournament_teams` vs `inscricoes`**  
-   - A documentação antiga (`docs/arquitetura.md`) e `lib/actions/inscricao.ts` assumem uma tabela intermediária `tournament_teams` com colunas `status`, `seed`, `checked_in_at`.[cite:35][cite:37]
-   - O dump atual do banco não possui `public.tournament_teams`; no lugar, existem `teams.tournament_id` e a tabela `inscricoes` com `(tournament_id, team_id, status, checked_in_at)` como fonte da verdade.[cite:31][cite:36]
-   - Qualquer tela que dependa de `tournament_teams` precisa ser migrada para usar `inscricoes`/`teams` com FKs por UUID.
+| Arquivo | Descrição |
+|---|---|
+| `001_initial_schema.sql` | Schema base: profiles, tournaments, teams, players, matches |
+| `002_schema_expansion.sql` | Expansão de campos e enums |
+| `003_audit_log.sql` | Tabela de auditoria |
+| `004_seedings_players_triggers.sql` | Triggers de seed e jogadores |
+| `005_demo_seed.sql` | Dados de demonstração |
+| `006_demo_phases3-4.sql` | Fases 3 e 4 do torneio demo |
+| `007_notifications_table.sql` | Tabela de notificações |
+| `008_fix_core_schema.sql` | Normalização pós-snapshot 23/04 |
+| `009_create_riot_accounts.sql` | Tabela `riot_accounts` e vínculos |
+| `010_fix_notifications.sql` | Correções em `notifications` |
+| `011_fix_triggers_and_functions.sql` | Triggers e funções revisados |
+| `012_ensure_tournament_slug.sql` | Garante `slug` único e NOT NULL em `tournaments` |
 
-2. **Nome de colunas em `players`**  
-   - O schema atual usa `tag_line` (com underscore) para o sufixo da conta Riot, conforme o dump (`CREATE TABLE public.players`).[cite:31]
-   - A migration `008_fix_core_schema.sql` assume colunas `tagline` e `tagline_` e cria índices em `summonername`; isso não reflete o estado atual (colunas se chamam `summoner_name` e `tag_line`).[cite:36]
-   - Qualquer código que use `players.tagline` ou `players.summonername` em vez de `tag_line` / `summoner_name` vai quebrar.
+### Próximas Migrations Previstas
 
-3. **Documentação antiga de arquitetura**  
-   - `docs/arquitetura.md` ainda descreve `tournament_teams` e um subconjunto de colunas em `tournaments`/`teams` que não bate mais com o dump mais recente (por exemplo, não cita `featured`, `banner_url`, `registration_deadline`, `riot_game_name`, `riot_tag_line`).[cite:31][cite:32][cite:37]
-   - Este arquivo (`ARQUITETURA-ATUAL.md`) deve ser considerado a referência de arquitetura atual; o antigo fica apenas como histórico.
+| Arquivo | Descrição |
+|---|---|
+| `013_teams_slug.sql` | Adicionar `slug` em `teams` com backfill + unique index |
 
-4. **Enums vs strings em `tournaments.status`**  
-   - O tipo no banco é `text` com default referenciando o enum `tournament_status` (`'DRAFT'::tournament_status`), mas não há constraint de enum no dump; o app escreve valores minúsculos.[cite:31][cite:34]
-   - Padronizar isso (ou para enum forte, ou para strings minúsculas) é importante para evitar estados inconsistentes.
+---
 
-Este documento serve como base para refatorar server actions, corrigir queries e alinhar a documentação com o estado real do código + banco em 25/04/2026.
+## Débitos Técnicos Mapeados
+
+| Item | Situação |
+|---|---|
+| `tournament_teams` referenciada em `lib/actions/inscricao.ts` | ❌ Tabela não existe. Substituir por `inscricoes`. |
+| Players com `summonername`/`tagline` (sem underscore) em código antigo | ❌ Usar `summoner_name`/`tag_line`. |
+| `starts_at`/`ends_at` no payload de update | ❌ São GENERATED. Usar `start_date`/`end_date`. |
+| Slug real para `teams` | ⏳ Previsto em `013_teams_slug.sql`. |
+| `status` de torneios como string solta vs enum rígido | ⏳ Padronizar para minúsculo consistente ou enum. |
