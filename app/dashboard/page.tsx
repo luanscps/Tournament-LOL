@@ -242,13 +242,17 @@ export default async function DashboardPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[rankSolo, rankFlex].filter(Boolean).map((r: any) => (
                 <div key={r.queue_type} className="bg-[#0A1428] rounded-xl p-4 flex items-center gap-4">
-                  {/* Emblema 72x72 */}
-                  <div className="shrink-0 w-[72px] h-[72px] relative">
+                  {/* Emblema de rank — container fixo 80x80 garante tamanho real */}
+                  <div
+                    className="shrink-0"
+                    style={{ width: 80, height: 80, position: "relative" }}
+                  >
                     <Image
                       src={rankEmblemUrl(r.tier)}
-                      width={72} height={72}
                       alt={r.tier}
                       title={r.tier}
+                      fill
+                      sizes="80px"
                       className="object-contain"
                       unoptimized
                     />
