@@ -3,6 +3,24 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 
+type TeamRef = { id: string; name: string; tag: string; logo_url: string | null } | null
+
+type Partida = {
+  id: string
+  round: number
+  match_number: number
+  status: string
+  score_a: number | null
+  score_b: number | null
+  scheduled_at: string | null
+  finished_at: string | null
+  best_of: number
+  fase_id: string | null
+  team_a: TeamRef
+  team_b: TeamRef
+  winner: { id: string; name: string; tag: string } | null
+}
+
 export default async function PartidasPublicaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const supabase = await createClient()
@@ -15,7 +33,7 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
 
   if (!torneio) notFound()
 
-  const { data: partidas } = await supabase
+  const { data: raw } = await supabase
     .from('matches')
     .select(`
       id, round, match_number, status, score_a, score_b,
@@ -27,6 +45,8 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
     .eq('tournament_id', torneio.id)
     .order('round')
     .order('match_number')
+
+  const partidas = (raw ?? []) as unknown as Partida[]
 
   const { data: fases } = await supabase
     .from('fases')
@@ -45,15 +65,15 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
   }
 
   // Agrupa por round
-  const porRound: Record<number, typeof partidas> = {}
-  ;(partidas ?? []).forEach(p => {
+  const porRound: Record<number, Partida[]> = {}
+  partidas.forEach(p => {
     if (!porRound[p.round]) porRound[p.round] = []
-    porRound[p.round]!.push(p)
+    porRound[p.round].push(p)
   })
 
-  const total = partidas?.length ?? 0
-  const finalizadas = partidas?.filter(p => p.status === 'finished').length ?? 0
-  const aoVivo = partidas?.filter(p => p.status === 'ongoing').length ?? 0
+  const total       = partidas.length
+  const finalizadas = partidas.filter(p => p.status === 'finished').length
+  const aoVivo      = partidas.filter(p => p.status === 'ongoing').length
 
   return (
     <div className="space-y-6">
@@ -73,7 +93,7 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
           </div>
         </div>
 
-        {/* Tabs fases */}
+        {/* Indicadores de fase */}
         {(fases ?? []).length > 1 && (
           <div className="flex gap-2 mt-4 pt-4 border-t border-[#1E3A5F] flex-wrap">
             {fases!.map(f => (
@@ -99,15 +119,16 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
         <section key={round}>
           <h2 className="text-gray-400 font-semibold text-sm uppercase tracking-wider mb-3">Round {round}</h2>
           <div className="space-y-3">
-            {matches!.map((p) => {
+            {matches.map((p) => {
               const fase = (fases ?? []).find(f => f.id === p.fase_id)
               return (
                 <div key={p.id} className={`card-lol ${ p.status === 'ongoing' ? 'border border-yellow-700/40' : '' }`}>
                   <div className="flex items-center gap-4 flex-wrap">
+
                     {/* Time A */}
                     <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
                       {p.team_a?.logo_url && (
-                        <img src={p.team_a.logo_url} alt={p.team_a.name} className="w-7 h-7 rounded-full object-cover" />
+                        <img src={p.team_a.logo_url} alt={p.team_a.name ?? ''} className="w-7 h-7 rounded-full object-cover" />
                       )}
                       <p className={`font-bold truncate ${ p.winner?.id === p.team_a?.id ? 'text-[#C8A84B]' : 'text-white' }`}>
                         [{p.team_a?.tag}] {p.team_a?.name}
@@ -137,7 +158,7 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
                         {p.winner?.id === p.team_b?.id && ' 🏆'}
                       </p>
                       {p.team_b?.logo_url && (
-                        <img src={p.team_b.logo_url} alt={p.team_b.name} className="w-7 h-7 rounded-full object-cover" />
+                        <img src={p.team_b.logo_url} alt={p.team_b.name ?? ''} className="w-7 h-7 rounded-full object-cover" />
                       )}
                     </div>
 
@@ -151,6 +172,7 @@ export default async function PartidasPublicaPage({ params }: { params: Promise<
                         <p>{new Date(p.finished_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</p>
                       )}
                     </div>
+
                   </div>
                 </div>
               )
