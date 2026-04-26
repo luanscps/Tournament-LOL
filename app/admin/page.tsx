@@ -1,21 +1,22 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
 const STATUS_COLOR: Record<string, string> = {
-  open:     "text-green-400",
-  checkin:  "text-blue-400",
-  ongoing:  "text-yellow-400",
-  finished: "text-gray-400",
-  draft:    "text-gray-500",
+  OPEN:        "text-green-400",
+  CHECKIN:     "text-blue-400",
+  IN_PROGRESS: "text-yellow-400",
+  FINISHED:    "text-gray-400",
+  DRAFT:       "text-gray-500",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  open:     "Aberto",
-  checkin:  "Check-in",
-  ongoing:  "Em andamento",
-  finished: "Finalizado",
-  draft:    "Rascunho",
+  OPEN:        "Aberto",
+  CHECKIN:     "Check-in",
+  IN_PROGRESS: "Em andamento",
+  FINISHED:    "Finalizado",
+  DRAFT:       "Rascunho",
 };
 
 export default async function AdminDashboard() {
@@ -30,6 +31,8 @@ export default async function AdminDashboard() {
     .single();
   if (!profile?.is_admin) redirect("/dashboard");
 
+  const adminClient = createAdminClient();
+
   const [
     { count: totalPlayers },
     { count: totalTeams },
@@ -37,12 +40,11 @@ export default async function AdminDashboard() {
     { count: pendingMatches },
     { data: recentTournaments },
   ] = await Promise.all([
-    supabase.from("players").select("*", { count: "exact", head: true }),
-    supabase.from("teams").select("*",   { count: "exact", head: true }),
-    supabase.from("tournaments").select("*", { count: "exact", head: true }).eq("status", "ongoing"),
-    supabase.from("matches").select("*",     { count: "exact", head: true }).eq("status", "pending"),
-    // Inclui slug para montar os links corretamente
-    supabase
+    adminClient.from("players").select("*", { count: "exact", head: true }),
+    adminClient.from("teams").select("*",   { count: "exact", head: true }),
+    adminClient.from("tournaments").select("*", { count: "exact", head: true }).eq("status", "IN_PROGRESS"),
+    adminClient.from("matches").select("*",     { count: "exact", head: true }).eq("status", "pending"),
+    adminClient
       .from("tournaments")
       .select("id, name, slug, status")
       .order("created_at", { ascending: false })
@@ -50,10 +52,10 @@ export default async function AdminDashboard() {
   ]);
 
   const stats = [
-    { label: "Invocadores",       value: totalPlayers   ?? 0, icon: "&#128100;", color: "text-blue-400",   href: "/admin/jogadores" },
-    { label: "Times inscritos",   value: totalTeams     ?? 0, icon: "&#128737;", color: "text-green-400",  href: "/admin/torneios"  },
-    { label: "Em andamento",      value: activeT        ?? 0, icon: "&#9876;",   color: "text-[#C8A84B]",  href: "/admin/torneios"  },
-    { label: "Partidas pendentes",value: pendingMatches ?? 0, icon: "&#9888;",   color: "text-red-400",    href: "/admin/torneios"  },
+    { label: "Invocadores",        value: totalPlayers   ?? 0, icon: "&#128100;", color: "text-blue-400",  href: "/admin/jogadores" },
+    { label: "Times inscritos",    value: totalTeams     ?? 0, icon: "&#128737;", color: "text-green-400", href: "/admin/torneios"  },
+    { label: "Em andamento",       value: activeT        ?? 0, icon: "&#9876;",   color: "text-[#C8A84B]", href: "/admin/torneios"  },
+    { label: "Partidas pendentes", value: pendingMatches ?? 0, icon: "&#9888;",   color: "text-red-400",   href: "/admin/torneios"  },
   ];
 
   return (
@@ -83,20 +85,13 @@ export default async function AdminDashboard() {
         </div>
         <div className="space-y-2">
           {recentTournaments?.map((t) => (
-            <div
-              key={t.id}
-              className="flex items-center justify-between bg-[#0A1428] rounded p-3"
-            >
+            <div key={t.id} className="flex items-center justify-between bg-[#0A1428] rounded p-3">
               <span className="text-white text-sm font-medium">{t.name}</span>
               <div className="flex items-center gap-3">
                 <span className={`text-xs ${STATUS_COLOR[t.status] ?? "text-gray-400"}`}>
                   {STATUS_LABEL[t.status] ?? t.status}
                 </span>
-                {/* FASE 2: usa t.slug na URL (não mais t.id) */}
-                <Link
-                  href={`/admin/torneios/${t.slug}`}
-                  className="text-xs text-[#C8A84B] hover:underline"
-                >
+                <Link href={`/admin/torneios/${t.slug}`} className="text-xs text-[#C8A84B] hover:underline">
                   Gerenciar →
                 </Link>
               </div>
@@ -114,12 +109,12 @@ export default async function AdminDashboard() {
           <p className="text-gray-400 text-sm">Gerenciar invocadores e contas Riot</p>
         </Link>
         <Link href="/admin/usuarios" className="card-lol hover:border-[#C8A84B]/30 transition-colors">
-          <p className="text-[#C8A84B] font-semibold mb-1">🔒 Usuarios</p>
-          <p className="text-gray-400 text-sm">Permissoes, ban e perfis de acesso</p>
+          <p className="text-[#C8A84B] font-semibold mb-1">🔒 Usuários</p>
+          <p className="text-gray-400 text-sm">Permissões, ban e perfis de acesso</p>
         </Link>
         <Link href="/admin/audit" className="card-lol hover:border-[#C8A84B]/30 transition-colors">
           <p className="text-[#C8A84B] font-semibold mb-1">📋 Auditoria</p>
-          <p className="text-gray-400 text-sm">Log de acoes administrativas</p>
+          <p className="text-gray-400 text-sm">Log de ações administrativas</p>
         </Link>
       </div>
     </div>

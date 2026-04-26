@@ -8,8 +8,8 @@ export default async function HomePage() {
   const { data: tournaments } = await supabase
     .from("tournaments")
     .select("*")
-    .in("status", ["open", "checkin", "ongoing"])
-    .order("start_date", { ascending: true }) // ← corrigido: era starts_at
+    .in("status", ["OPEN", "IN_PROGRESS", "CHECKIN"])
+    .order("start_date", { ascending: true })
     .limit(6);
 
   const { count: totalPlayers } = await supabase
@@ -92,7 +92,9 @@ export default async function HomePage() {
           </div>
         ) : (
           <div className="card-lol text-center py-16">
-            <p className="text-gray-400 text-lg mb-4">Nenhum torneio ativo.</p>
+            <p className="text-4xl mb-4">🏆</p>
+            <p className="text-white font-semibold text-lg mb-2">Nenhum torneio ativo no momento</p>
+            <p className="text-gray-400 text-sm mb-6">Em breve novos torneios serão abertos para inscrição.</p>
             <Link href="/torneios" className="btn-outline-gold">Ver todos os torneios</Link>
           </div>
         )}
