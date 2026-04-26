@@ -29,9 +29,7 @@ function rankEmblemMiniUrl(tier: string): string {
 
 /**
  * URL da moldura de nível via CommunityDragon.
- * As molduras oficiais estão em:
- * https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/level-borders/
- * Faixas: 0-29, 30-49, 50-99, 100-149, 150-199, 200-299, 300-399, 400-499, 500+
+ * Faixas espelhando as do cliente do LoL.
  */
 function profileLevelBorderUrl(level: number): string {
   const base = "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/level-borders";
@@ -155,20 +153,6 @@ export default async function DashboardPage({
     };
   });
 
-  /* ── tamanho do contêiner do ícone de perfil ────────────────────────────────
-   * A moldura CommunityDragon (summoner-levelborder-*.png) é uma imagem
-   * quadrada que cobre o ícone circular. Usamos position:absolute para sobrepor
-   * a moldura ao ícone, sem clip-path, mantendo a imagem oficial do jogo.
-   *
-   * Dimensões escolhidas:
-   *   - Ícone interno: 80×80 px  (centralizado)
-   *   - Moldura:       112×112 px (sobreposta, cobre as bordas do ícone)
-   *   - Container:     112×112 px
-   *
-   * O badge de nível fica abaixo do container, sobrepondo a parte inferior
-   * da moldura exatamente como no cliente LoL.
-   */
-
   return (
     <div className="space-y-8">
 
@@ -199,7 +183,7 @@ export default async function DashboardPage({
         <div style={{ position: "relative", width: 112, height: 128, flexShrink: 0 }}>
           {profileIcon ? (
             <>
-              {/* Ícone circular, centralizado dentro do container da moldura */}
+              {/* Ícone circular do invocador — camada base */}
               <img
                 src={profileIcon}
                 width={80}
@@ -215,7 +199,9 @@ export default async function DashboardPage({
                 }}
               />
 
-              {/* Moldura de nível oficial via CommunityDragon */}
+              {/* Moldura de nível oficial CommunityDragon — camada superior
+                  NOTA: Server Component — sem event handlers (onError proibido).
+                  O PNG falha silenciosamente se a URL não existir. */}
               {levelBorderUrl && (
                 <img
                   src={levelBorderUrl}
@@ -231,17 +217,12 @@ export default async function DashboardPage({
                     display: "block",
                     zIndex: 2,
                     pointerEvents: "none",
-                    // CSS custom property para o drop-shadow animado
                     ["--glow-color" as string]: borderStyle?.glow ?? "rgba(200,168,75,0.6)",
                   } as React.CSSProperties}
-                  onError={(e) => {
-                    // Fallback silencioso: esconde a moldura se a imagem falhar
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
                 />
               )}
 
-              {/* Badge de nível — abaixo da moldura */}
+              {/* Badge de nível */}
               <span
                 style={{
                   position: "absolute",
@@ -266,7 +247,6 @@ export default async function DashboardPage({
             <div className="w-20 h-20 rounded-full bg-[#1E3A5F] flex items-center justify-center text-3xl">👤</div>
           )}
         </div>
-        {/* ── fim ícone ───────────────────────────────────────────────────── */}
 
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white truncate">
