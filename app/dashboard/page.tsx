@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   profileIconUrl,
   championIconByCDragon,
-  rankEmblemUrl,
   masteryIconUrl,
   masteryLevelColor,
   profileIconBorderStyle,
@@ -23,6 +22,14 @@ const STATUS_BADGE: Record<string, string> = {
   APPROVED: "bg-green-400/10  text-green-400  border border-green-400/30",
   REJECTED: "bg-red-400/10   text-red-400   border border-red-400/30",
 };
+
+/**
+ * Emblema de rank usando ranked-mini-crests (80x80px, bem proporcional).
+ * URL verificada: retorna PNG 80x80 para todos os tiers.
+ */
+function rankEmblemMiniUrl(tier: string): string {
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-mini-crests/${tier.toLowerCase()}.png`;
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -97,7 +104,6 @@ export default async function DashboardPage({
     ? await profileIconUrl(riotAccount.profile_icon_id)
     : null;
 
-  // Estilo da moldura CSS por faixa de nível
   const borderStyle = riotAccount?.summoner_level
     ? profileIconBorderStyle(riotAccount.summoner_level)
     : null;
@@ -106,16 +112,23 @@ export default async function DashboardPage({
     ? championSplashUrl(topMasteries[0].champion_name, 0)
     : null;
 
-  // Ícone por champion_id via CommunityDragon (sempre 200, sem risco de 404 por nome)
   const masteryAssets = topMasteries.map((m: any) => ({
     ...m,
-    iconUrl:    championIconByCDragon(m.champion_id),
-    masteryUrl: masteryIconUrl(m.mastery_level),
+    iconUrl:      championIconByCDragon(m.champion_id),
+    masteryUrl:   masteryIconUrl(m.mastery_level),
     masteryColor: masteryLevelColor(m.mastery_level),
   }));
 
   return (
     <div className="space-y-8">
+
+      {/* Keyframes injetados uma vez no topo — moldura do perfil */}
+      <style>{`
+        @keyframes profile-frame-pulse {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.65; }
+        }
+      `}</style>
 
       {params.error === "acesso_negado" && (
         <div className="flex items-start gap-3 bg-red-950/60 border border-red-700/50 rounded-xl px-5 py-4">
@@ -130,11 +143,27 @@ export default async function DashboardPage({
       {/* ── Perfil ─────────────────────────────────────────────────────────── */}
       <div className="card-lol flex items-center gap-6 flex-wrap">
 
-        {/* Ícone de perfil com moldura CSS animada por faixa de nível */}
-        <div className="relative shrink-0" style={{ width: 96, height: 96 }}>
+        {/* Ícone de perfil + moldura */}
+        <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }}>
           {profileIcon ? (
             <>
-              {/* Anel externo brilhante (moldura CSS) */}
+              {/* Imagem de perfil — posicionada dentro do container */}
+              <img
+                src={profileIcon}
+                width={90}
+                height={90}
+                alt="Ícone de Perfil Riot"
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  left: 3,
+                  width: 90,
+                  height: 90,
+                  borderRadius: "50%",
+                  display: "block",
+                }}
+              />
+              {/* Moldura animada — anel sobre a imagem */}
               {borderStyle && (
                 <span
                   aria-hidden="true"
@@ -143,27 +172,19 @@ export default async function DashboardPage({
                     inset: 0,
                     borderRadius: "50%",
                     border: `3px solid ${borderStyle.color}`,
-                    boxShadow: `0 0 10px 3px ${borderStyle.glow}, inset 0 0 6px 1px ${borderStyle.glow}`,
+                    boxShadow: `0 0 12px 4px ${borderStyle.glow}, inset 0 0 8px 2px ${borderStyle.glow}`,
                     animation: "profile-frame-pulse 2.4s ease-in-out infinite",
                     zIndex: 10,
                     pointerEvents: "none",
+                    display: "block",
                   }}
                 />
               )}
-              {/* Ícone de perfil Riot (DataDragon) */}
-              <Image
-                src={profileIcon}
-                width={90} height={90}
-                alt="Ícone de Perfil Riot"
-                className="rounded-full"
-                style={{ position: "absolute", top: 3, left: 3 }}
-                unoptimized
-              />
               {/* Badge de nível */}
               <span
                 style={{
                   position: "absolute",
-                  bottom: -6,
+                  bottom: -8,
                   left: "50%",
                   transform: "translateX(-50%)",
                   zIndex: 20,
@@ -172,7 +193,7 @@ export default async function DashboardPage({
                   color: borderStyle?.color ?? "#C8A84B",
                   fontSize: 10,
                   fontWeight: 700,
-                  padding: "1px 6px",
+                  padding: "1px 7px",
                   borderRadius: 9999,
                   lineHeight: "16px",
                   whiteSpace: "nowrap",
@@ -185,14 +206,6 @@ export default async function DashboardPage({
             <div className="w-20 h-20 rounded-full bg-[#1E3A5F] flex items-center justify-center text-3xl">👤</div>
           )}
         </div>
-
-        {/* Animação da moldura — injetada inline para evitar dependência de CSS global */}
-        <style>{`
-          @keyframes profile-frame-pulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 10px 3px var(--glow), inset 0 0 6px 1px var(--glow); }
-            50% { opacity: 0.7; box-shadow: 0 0 18px 6px var(--glow), inset 0 0 10px 3px var(--glow); }
-          }
-        `}</style>
 
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white truncate">
@@ -237,24 +250,33 @@ export default async function DashboardPage({
             </div>
           )}
 
-          {/* Rank cards com emblema visual maior */}
+          {/* Rank cards */}
           {(rankSolo || rankFlex) ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[rankSolo, rankFlex].filter(Boolean).map((r: any) => (
                 <div key={r.queue_type} className="bg-[#0A1428] rounded-xl p-4 flex items-center gap-4">
-                  {/* Emblema de rank — container fixo 80x80 garante tamanho real */}
-                  <div
-                    className="shrink-0"
-                    style={{ width: 80, height: 80, position: "relative" }}
-                  >
-                    <Image
-                      src={rankEmblemUrl(r.tier)}
+                  {/*
+                    Emblema via ranked-mini-crests (80x80px — PNG proporcional).
+                    Usamos <img> nativo para evitar o comportamento de layout do Next/Image
+                    que pode colapsar quando a imagem tem padding interno transparente.
+                    O container tem tamanho fixo e overflow:hidden para cortar excesso.
+                  */}
+                  <div style={{
+                    width: 72,
+                    height: 72,
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    overflow: "hidden",
+                  }}>
+                    <img
+                      src={rankEmblemMiniUrl(r.tier)}
                       alt={r.tier}
                       title={r.tier}
-                      fill
-                      sizes="80px"
-                      className="object-contain"
-                      unoptimized
+                      width={72}
+                      height={72}
+                      style={{ display: "block", width: 72, height: 72, objectFit: "contain" }}
                     />
                   </div>
                   <div>
@@ -279,7 +301,7 @@ export default async function DashboardPage({
             <p className="text-gray-500 text-sm">Sem rank nesta temporada</p>
           )}
 
-          {/* Top Campeões — ícone via CommunityDragon por champion_id */}
+          {/* Top Campeões */}
           {masteryAssets.length > 0 && (
             <div>
               <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">
@@ -293,41 +315,66 @@ export default async function DashboardPage({
                     title={`${m.champion_name} · Maestria ${m.mastery_level} · ${(m.mastery_points / 1000).toFixed(0)}k pts`}
                   >
                     {/* Ícone do campeão */}
-                    <div className="relative w-[52px] h-[52px]">
-                      <Image
+                    <div style={{ position: "relative", width: 56, height: 56, flexShrink: 0 }}>
+                      <img
                         src={m.iconUrl}
-                        width={52} height={52}
+                        width={56}
+                        height={56}
                         alt={m.champion_name ?? "Campeão"}
-                        className="rounded-md w-full h-full object-cover"
-                        style={{ border: `2px solid ${m.masteryColor}` }}
-                        unoptimized
+                        style={{
+                          width: 56,
+                          height: 56,
+                          borderRadius: 6,
+                          objectFit: "cover",
+                          display: "block",
+                          border: `2px solid ${m.masteryColor}`,
+                        }}
                       />
-                      {/* Nível de maestria badge canto inferior */}
+                      {/* Badge de maestria */}
                       <span
                         style={{
                           position: "absolute",
-                          bottom: -4,
-                          right: -4,
+                          bottom: -5,
+                          right: -5,
                           background: "#0A1428",
                           border: `1px solid ${m.masteryColor}`,
                           color: m.masteryColor,
-                          fontSize: 9,
+                          fontSize: 10,
                           fontWeight: 800,
                           borderRadius: 9999,
-                          padding: "0 4px",
-                          lineHeight: "14px",
+                          padding: "0 5px",
+                          lineHeight: "16px",
+                          whiteSpace: "nowrap",
                         }}
                       >
                         M{m.mastery_level}
                       </span>
                     </div>
-                    {/* Nome abreviado */}
-                    <p className="text-[10px] text-gray-400 max-w-[52px] truncate text-center">
+
+                    {/* Nome do campeão — tamanho legível */}
+                    <p style={{
+                      fontSize: 12,
+                      color: "#9ca3af",
+                      maxWidth: 64,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      textAlign: "center",
+                      marginTop: 4,
+                    }}>
                       {m.champion_name}
                     </p>
-                    {/* Pontos */}
-                    <p className="text-[9px] text-gray-600">
-                      {(m.mastery_points / 1000).toFixed(0)}k
+
+                    {/* Pontos de maestria — legível */}
+                    <p style={{
+                      fontSize: 11,
+                      color: m.masteryColor,
+                      fontWeight: 600,
+                      textAlign: "center",
+                    }}>
+                      {m.mastery_points >= 1000
+                        ? `${(m.mastery_points / 1000).toFixed(0)}k`
+                        : m.mastery_points}
                     </p>
                   </div>
                 ))}
