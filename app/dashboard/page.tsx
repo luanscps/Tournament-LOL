@@ -22,6 +22,28 @@ const STATUS_BADGE: Record<string, string> = {
   REJECTED: "bg-red-400/10   text-red-400   border border-red-400/30",
 };
 
+/**
+ * Retorna a URL da moldura de nível do invocador (profile icon border).
+ * O LoL usa faixas: 1-29, 30-44, 45-69, 70-99, 100+ etc.
+ * CommunityDragon disponibiliza as molduras no plugin rcp-fe-lol-uikit.
+ * Usamos o asset genérico de moldura padrão que funciona para todos os níveis.
+ */
+function profileIconFrameUrl(level: number): string {
+  // Faixas oficiais de moldura por nível do invocador
+  let frame = "honor-level-0-crest-icon"; // fallback genérico
+  if (level >= 1   && level < 30)  frame = "summoner-level-borders-1-29";
+  else if (level >= 30  && level < 50)  frame = "summoner-level-borders-30-49";
+  else if (level >= 50  && level < 100) frame = "summoner-level-borders-50-99";
+  else if (level >= 100 && level < 150) frame = "summoner-level-borders-100-149";
+  else if (level >= 150 && level < 200) frame = "summoner-level-borders-150-199";
+  else if (level >= 200 && level < 300) frame = "summoner-level-borders-200-299";
+  else if (level >= 300 && level < 400) frame = "summoner-level-borders-300-399";
+  else if (level >= 400 && level < 500) frame = "summoner-level-borders-400-499";
+  else if (level >= 500)                frame = "summoner-level-borders-500";
+
+  return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-profile-page/global/default/images/${frame}.png`;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -95,6 +117,11 @@ export default async function DashboardPage({
     ? await profileIconUrl(riotAccount.profile_icon_id)
     : null;
 
+  // Moldura de nível do invocador
+  const iconFrame = riotAccount?.summoner_level
+    ? profileIconFrameUrl(riotAccount.summoner_level)
+    : null;
+
   const mainChampionSplash = topMasteries[0]?.champion_name
     ? championSplashUrl(topMasteries[0].champion_name, 0)
     : null;
@@ -123,17 +150,39 @@ export default async function DashboardPage({
 
       {/* ── Perfil ── */}
       <div className="card-lol flex items-center gap-6 flex-wrap">
-        <div className="relative shrink-0">
+
+        {/* Ícone de perfil + moldura de nível sobreposta */}
+        <div className="relative shrink-0 w-[88px] h-[88px]">
           {profileIcon ? (
-            <Image
-              src={profileIcon}
-              width={80} height={80} alt="Profile Icon"
-              className="rounded-full border-2 border-[#C8A84B]"
-            />
+            <>
+              {/* Ícone de perfil Riot */}
+              <Image
+                src={profileIcon}
+                width={80} height={80}
+                alt="Profile Icon"
+                className="rounded-full absolute top-1 left-1"
+                unoptimized
+              />
+              {/* Moldura de nível sobreposta (overlay) */}
+              {iconFrame && (
+                <Image
+                  src={iconFrame}
+                  width={88} height={88}
+                  alt={`Moldura Nível ${riotAccount?.summoner_level}`}
+                  className="absolute inset-0 z-10"
+                  unoptimized
+                />
+              )}
+              {/* Nível do invocador na parte inferior da moldura */}
+              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 z-20 bg-[#0A1428] border border-[#C8A84B]/60 text-[#C8A84B] text-[10px] font-bold px-1.5 py-0 rounded-full leading-5">
+                {riotAccount?.summoner_level}
+              </span>
+            </>
           ) : (
             <div className="w-20 h-20 rounded-full bg-[#1E3A5F] flex items-center justify-center text-3xl">👤</div>
           )}
         </div>
+
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white truncate">
             {profile?.full_name ?? profile?.email}
@@ -142,7 +191,6 @@ export default async function DashboardPage({
             <p className="text-[#C8A84B] font-medium">
               {riotAccount.game_name}
               <span className="text-gray-500">#{riotAccount.tag_line}</span>
-              {" "}<span className="text-gray-400 text-sm">· Nível {riotAccount.summoner_level}</span>
             </p>
           ) : (
             <p className="text-gray-400 text-sm">Nenhuma conta Riot vinculada</p>
@@ -183,7 +231,6 @@ export default async function DashboardPage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[rankSolo, rankFlex].filter(Boolean).map((r: any) => (
                 <div key={r.queue_type} className="bg-[#0A1428] rounded-lg p-3 flex items-center gap-3">
-                  {/* Emblema de rank via CommunityDragon */}
                   <Image
                     src={rankEmblemUrl(r.tier)}
                     width={52} height={52}
@@ -222,15 +269,13 @@ export default async function DashboardPage({
               <div className="flex gap-4 flex-wrap">
                 {masteryAssets.map((m: any) => (
                   <div key={m.champion_id} className="flex flex-col items-center gap-1" title={m.champion_name}>
-                    {/* Ícone do campeão — URL dinâmica via getDDVersion */}
                     <Image
                       src={m.iconUrl}
                       width={48} height={48}
-                      alt={m.champion_name}
+                      alt={m.champion_name ?? "Campeão"}
                       className="rounded border border-[#1E3A5F]"
                       unoptimized
                     />
-                    {/* Ícone visual de nível de maestria — CommunityDragon */}
                     <Image
                       src={m.masteryUrl}
                       width={24} height={24}
