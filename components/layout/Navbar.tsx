@@ -47,6 +47,7 @@ export function Navbar() {
 
   const NAV_LINKS = [
     { href: '/torneios', label: 'Torneios' },
+    { href: '/times',    label: 'Times' },
     { href: '/jogadores', label: 'Jogadores' },
     { href: '/ranking', label: 'Ranking' },
   ];
