@@ -31,28 +31,28 @@ export default async function AdminTorneios() {
     .single();
   if (!profile?.is_admin) redirect("/dashboard");
 
-  const adminClient = createAdminClient();
+  // Service role bypassa RLS — garante que lista TODOS os torneios
+  const admin = createAdminClient();
 
-  const [{ data: torneios }, { data: inscricoesCount }] = await Promise.all([
-    adminClient
-      .from("tournaments")
-      .select("id, name, slug, status, start_date, max_teams, game_mode, format")
-      .order("created_at", { ascending: false }),
-    adminClient
-      .from("tournament_registrations")
-      .select("tournament_id"),
-  ]);
+  const { data: torneios, error: tErr } = await admin
+    .from("tournaments")
+    .select("id, name, slug, status, start_date, max_teams, game_mode, format, created_at")
+    .order("created_at", { ascending: false });
 
-  // Conta inscrições por torneio
+  const { data: regRows } = await admin
+    .from("tournament_registrations")
+    .select("tournament_id");
+
   const countMap: Record<string, number> = {};
-  for (const r of inscricoesCount ?? []) {
+  for (const r of regRows ?? []) {
     countMap[r.tournament_id] = (countMap[r.tournament_id] ?? 0) + 1;
   }
 
-  const abertos     = (torneios ?? []).filter(t => t.status === "OPEN");
-  const andamento   = (torneios ?? []).filter(t => t.status === "IN_PROGRESS" || t.status === "CHECKIN");
-  const finalizados = (torneios ?? []).filter(t => t.status === "FINISHED");
-  const rascunhos   = (torneios ?? []).filter(t => t.status === "DRAFT");
+  const list       = torneios ?? [];
+  const abertos    = list.filter(t => t.status === "OPEN");
+  const andamento  = list.filter(t => t.status === "IN_PROGRESS" || t.status === "CHECKIN");
+  const finalizados= list.filter(t => t.status === "FINISHED");
+  const rascunhos  = list.filter(t => t.status === "DRAFT");
 
   function TorneioRow({ t }: { t: any }) {
     const inscritos = countMap[t.id] ?? 0;
@@ -66,11 +66,9 @@ export default async function AdminTorneios() {
             </span>
           </div>
           <div className="flex gap-4 mt-1 text-xs text-gray-500 flex-wrap">
-            {t.start_date && (
-              <span>📅 {new Date(t.start_date).toLocaleDateString("pt-BR")}</span>
-            )}
+            {t.start_date && <span>📅 {new Date(t.start_date).toLocaleDateString("pt-BR")}</span>}
             <span>👥 {inscritos}{t.max_teams ? `/${t.max_teams}` : ""} times</span>
-            {t.format && <span>🏆 {t.format}</span>}
+            {t.format    && <span>🏆 {t.format}</span>}
             {t.game_mode && <span>🎮 {t.game_mode}</span>}
           </div>
         </div>
@@ -108,20 +106,19 @@ export default async function AdminTorneios() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Gerenciar Torneios</h1>
-          <p className="text-gray-400 text-sm mt-1">Total: {(torneios ?? []).length} torneios</p>
+          <p className="text-gray-400 text-sm mt-1">Total: {list.length} torneios</p>
         </div>
         <Link href="/admin/torneios/criar" className="btn-gold text-sm px-4 py-2">
           + Novo Torneio
         </Link>
       </div>
 
-      {/* Resumo rápido */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Abertos",      value: abertos.length,     color: "text-green-400" },
+          { label: "Abertos",      value: abertos.length,     color: "text-green-400"  },
           { label: "Em andamento", value: andamento.length,   color: "text-yellow-400" },
-          { label: "Finalizados",  value: finalizados.length, color: "text-gray-400" },
-          { label: "Rascunhos",    value: rascunhos.length,   color: "text-gray-500" },
+          { label: "Finalizados",  value: finalizados.length, color: "text-gray-400"   },
+          { label: "Rascunhos",    value: rascunhos.length,   color: "text-gray-500"   },
         ].map(s => (
           <div key={s.label} className="card-lol text-center py-4">
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -130,7 +127,7 @@ export default async function AdminTorneios() {
         ))}
       </div>
 
-      {(torneios ?? []).length === 0 ? (
+      {list.length === 0 ? (
         <div className="card-lol text-center py-16">
           <p className="text-4xl mb-4">🏆</p>
           <p className="text-white font-semibold mb-2">Nenhum torneio criado ainda</p>
