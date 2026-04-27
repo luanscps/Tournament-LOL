@@ -366,3 +366,152 @@ As funções ficam em `supabase/functions/*` e são chamadas pelo backend ou por
 - Este arquivo é a **fonte única de verdade** sobre arquitetura, banco e integrações.
 - Arquivos mais antigos em `docs/`, `docs/api/` e `docs/sql/` podem ser reduzidos para resumos focados e links para seções deste documento.
 - Novos desenvolvedores devem começar lendo este arquivo antes de ir para planos de frontend (Fases 3/4) ou testes.
+
+---
+
+## Apêndice — Referência técnica de RLS e infra Supabase
+
+### A.1 Visão geral de RLS no schema `public`
+
+O projeto usa Row Level Security (RLS) de forma agressiva em praticamente todas as tabelas de domínio do schema `public` (profiles, tournaments, teams, players, inscrições, partidas, estatísticas, notificações, disputas, convites, etc.).
+As policies foram desenhadas para garantir três princípios:
+
+- **Leitura aberta quando faz sentido de produto** (ex.: lista de torneios, standings, regras), mesmo com RLS habilitado.
+- **Mutação restrita ao “dono” lógico do registro** (jogador, capitão de time, organizador) com exceções explícitas para admins via funções `is_admin(...)` e `is_current_user_admin()`.
+- **Administração sempre auditada**: updates sensíveis (ex.: em `matches`) geram registros em `audit_log` via triggers como `audit_matches_changes()` e funções como `log_admin_action(...)`.
+
+A combinação usual é:
+
+- `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`
+- Policies do tipo `USING` e `WITH CHECK` referenciando `auth.uid()` e/ou funções `public.is_admin`, `public.is_organizer_or_admin` e `public.is_tournament_organizer`.
+
+---
+
+### A.2 Matriz resumida de RLS por tabela de domínio
+
+A tabela abaixo resume o comportamento **esperado** de RLS nas principais tabelas do schema `public`, conforme o estado atual das migrations e do dump de produção (2026‑04‑27).
+
+| Tabela                  | Leitura (SELECT)                                                                 | Escrita (INSERT/UPDATE/DELETE)                                                                                                   |
+|-------------------------|-----------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| `profiles`              | Usuário lê apenas o próprio perfil; admins podem ler todos.                      | Apenas o próprio usuário pode atualizar campos não sensíveis (nome, avatar); flags administrativas (`is_admin`, `is_banned`) só admin. |
+| `tournaments`           | Leitura pública (lista de torneios, detalhes).                                   | Criação/edição/remoção restritas a admins/organizadores, usando `is_admin(auth.uid())` e `is_organizer_or_admin(auth.uid())`.   |
+| `tournament_stages`     | Leitura pública (usada para exibir fases).                                       | Apenas admins/organizadores do torneio podem criar/editar/remover fases.                                                         |
+| `teams`                 | Leitura pública limitada ao necessário (lista de times por torneio, roster).     | INSERT/UPDATE/DELETE restritos ao owner (`owner_id = auth.uid()`) ou admin; RLS impede jogadores de alterarem times alheios.    |
+| `team_members`          | Membros de um time veem apenas o próprio time; admins veem todos.                | Convites/aceites gerenciados por owner/admin; convidado só consegue sair (`status = left`) do time próprio.                     |
+| `active_team`           | Usuário lê apenas a própria linha (`profile_id = auth.uid()`).                   | Atualizada principalmente por triggers (`auto_add_captain_as_member`, `accept_team_invite`); updates diretos são restritos.     |
+| `players`               | Leitura pública (stats de jogadores, quando permitido pela UI).                  | Escrita feita por backend/admin e pela Edge Function `riot-api-sync`; policies evitam que usuário normal altere elo manualmente.|
+| `inscricoes`            | Capitão/owner vê as próprias inscrições; admins veem todas.                      | INSERT permitido ao capitão/time; mudança de `status` (`PENDING`→`APPROVED/REJECTED`) restrita a admins/organizadores.          |
+| `seedings`              | Leitura pública (para exibir seeds no bracket).                                  | Escrita apenas por admins/organizadores (definição de seeds manualmente ou via painel).                                         |
+| `matches`               | Leitura pública (chave do torneio; scoreboard).                                  | Criação/edição/remoção restritas ao backend/organizador/admin; usada por `bracket-generator` e painel admin.                   |
+| `match_games`           | Leitura pública (histórico de jogos).                                            | Escrita restrita a backend/admin (registro de jogos individuais, Riot ingest).                                                  |
+| `player_stats`          | Leitura pública (leaderboards, KDA).                                             | Escrita restrita a backend/admin (ingest de stats de cada jogo).                                                                |
+| `notifications`         | Usuário vê apenas notificações onde `user_id = auth.uid()`.                      | Escritas por triggers de domínio (`fn_notify_inscricao`, `trg_inscricao_*`) e por backend; usuário não insere linhas arbitrárias. |
+| `audit_log`             | Apenas admins podem ler; usuários comuns não têm acesso.                         | Inserção via funções/trigger (`log_admin_action`, `audit_matches_changes`); não há UPDATE/DELETE direto para usuários comuns.   |
+| `riot_accounts`         | Usuário lê somente contas vinculadas ao próprio profile; admins podem ler todas. | Escrita feita pela UI (vincular conta) e por sincronização, sempre filtrada por `profile_id = auth.uid()` ou admin.            |
+| `rank_snapshots`        | Leitura pública para estatísticas; gravação interna.                             | Inserts feitos pelo backend/Edge Function; policies impedem alteração por usuário final.                                        |
+| `champion_masteries`    | Leitura pública (visualização de maestrias).                                     | Escrita restrita ao backend/Edge Function.                                                                                      |
+| `team_invites`          | Convidado e owner/admin veem convites relevantes; demais usuários não veem.      | Criação/gerência de convites apenas por owners/admin; convidado pode aceitar/recusar o próprio convite.                         |
+| `disputes`              | Autor vê as próprias disputas; admins veem todas.                                | Criação por usuários autenticados; mudança de `status` (`OPEN`→`UNDER_REVIEW`/`RESOLVED`/`DISMISSED`) restrita a admins.       |
+| `tournament_rules`      | Leitura pública (regras do torneio).                                             | Escrita apenas por admins/organizadores.                                                                                        |
+| `site_terms_acceptance` | Usuário vê apenas seus próprios registros de aceite; admins podem inspecionar.   | Inserts normalmente feitos pela UI no primeiro acesso; não há atualização posterior, apenas novos registros de versão.         |
+| `tournament_match_results` | Leitura restrita a admin/backoffice (dados brutos da Riot/Tournament Code).  | Escrita por ingest automática (Edge Function/processo backend); usuário final não insere/edita diretamente.                    |
+
+> Observação: os nomes exatos de policies podem variar entre ambientes, mas o comportamento efetivo é o descrito acima.
+
+---
+
+### A.3 Funções auxiliares de RLS e papel de cada uma
+
+Algumas funções SQL do schema `public` são usadas de forma recorrente em policies de RLS e triggers.
+
+- `public.is_admin(uid uuid) returns boolean`  
+  Retorna `true` se o usuário com `id = uid` tem permissão de administrador (via coluna booleana ou enum de `profiles`). Usada em policies do tipo “admin pode tudo”.
+
+- `public.is_current_user_admin() returns boolean`  
+  Atalho específico para `auth.uid()`; evita repetição de subqueries em policies. Ajuda a simplificar regras como “se for admin, ignora filtros adicionais”.
+
+- `public.is_organizer_or_admin(uid uuid)`  
+  Usa `profiles.role` (`user_role`) para permitir ações a organizadores e admins, por exemplo criação/edição de torneios e fases.
+
+- `public.is_tournament_organizer(uid uuid, tid uuid)`  
+  Verifica se o usuário é organizador (ou criador) de um torneio específico ou se é admin, usada em policies de `tournaments`, `tournament_stages`, `matches` e tabelas correlatas.
+
+- `auth.uid()` / `auth.jwt()`  
+  Helpers padrão do Supabase para acessar o usuário/autorização atual; aparecem nas policies como fonte de `uid` para funções acima.
+
+Essas funções são todas `SECURITY DEFINER` e tiveram o `search_path` ajustado nas migrations para evitar ataques de hijacking de schema (permitindo que sejam usadas com segurança em policies).
+
+---
+
+### A.4 Infra Supabase: schemas `auth`, `realtime`, `storage`, `supabase_migrations`
+
+Além do schema de domínio `public`, o Supabase mantém schemas auxiliares que **não devem ser alterados manualmente** via migrations de aplicação, salvo se você souber exatamente o que está fazendo.
+
+#### A.4.1 Schema `auth`
+
+Responsável por autenticação e identidade dos usuários:
+
+- Tabelas principais:  
+  - `auth.users` (usuários, credenciais, e‑mail, metadados).  
+  - `auth.sessions`, `auth.refresh_tokens`, `auth.identities` (sessões, tokens de refresh, logins de provedores).  
+  - Tabelas auxiliares de MFA e OAuth (`mfa_*`, `oauth_*`, `flow_state`, etc.).
+- Funções utilitárias:  
+  - `auth.uid()`, `auth.jwt()`, `auth.role()`, `auth.email()` — expõem dados de JWT para o banco; usadas nas policies de RLS do schema `public`.
+
+**Boas práticas:**
+
+- **Nunca** altere diretamente o schema de `auth` nas migrations de domínio; use as configurações do painel do Supabase para OAuth, providers e MFA.  
+- Toda lógica de permissão entre usuários deve ser construída em `public.profiles` + funções `is_admin` / `is_organizer_or_admin`.
+
+#### A.4.2 Schema `realtime`
+
+Atende ao serviço de realtime do Supabase:
+
+- Tipos e funções como `realtime.wal_column`, `realtime.apply_rls`, `realtime.list_changes`, `realtime.send`, `realtime.subscription_check_filters` são responsáveis por consumir o WAL e publicar mudanças em canais websockets.  
+- Tabelas internas (`realtime.messages`, `realtime.subscription`, etc.) não são usadas diretamente pela aplicação.
+
+**Boas práticas:**
+
+- Não criar migrations alterando diretamente o comportamento de `realtime.*`; se precisar de realtime, use a interface do Supabase (channels, listeners) e configure apenas quais tabelas de `public` participam disso.
+
+#### A.4.3 Schema `storage`
+
+É o backend do Supabase Storage (buckets e arquivos):
+
+- Tabelas centrais:  
+  - `storage.buckets` — metadados de buckets.  
+  - `storage.objects` — arquivos (chave, metadados, timestamps).
+- Funções utilitárias:  
+  - `storage.search_v2`, `storage.list_objects_with_delimiter`, `storage.allow_only_operation`, `storage.operation()`, etc.
+
+**Boas práticas:**
+
+- Não deletar/alterar diretamente linhas de `storage.objects`; use a API de Storage do Supabase para criar/listar/deletar arquivos.  
+- Se precisar ajustar permissões de arquivos, crie policies específicas em `storage.objects` usando o painel ou migrations muito bem testadas.
+
+#### A.4.4 Schema `supabase_migrations`
+
+Schema interno usado pelo Supabase CLI para rastrear migrations aplicadas:
+
+- Tabelas de controle (`schema_migrations` etc.) usadas para saber quais migrations já foram executadas.
+
+**Boas práticas:**
+
+- Nunca crie migrations que alterem o conteúdo de `supabase_migrations`; apenas deixe o CLI gerenciá-lo.  
+- Para mudanças no banco, sempre crie migrations novas em `supabase/migrations/` e deixe o Supabase CLI aplicar/registrar essas mudanças.
+
+---
+
+### A.5 Recomendações práticas para evolução do schema
+
+- **Novas tabelas de domínio**:  
+  - Crie sempre no schema `public`.  
+  - Habilite RLS assim que criar a tabela (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`).  
+  - Defina policies em termos de `auth.uid()` + funções auxiliares (`is_admin`, `is_organizer_or_admin`), nunca usando IDs “hardcoded”.
+
+- **Novas funções SQL**:  
+  - Defina `search_path` explicitamente (`SET search_path TO 'public'` ou `'public','extensions'`).  
+  - Use `SECURITY DEFINER` apenas quando a função for usada em RLS ou precisar elevar privilégios; caso contrário, deixe como execução normal.
+
+- **Auditoria e logs**:  
+  - Prefira centralizar logs sensíveis em `audit_log` usando `log_admin_action(...)` e triggers dedicadas, mantendo o histórico consistente.
