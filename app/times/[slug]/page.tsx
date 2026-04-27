@@ -6,20 +6,6 @@ export const dynamic = "force-dynamic";
 
 const DDRAGON = "14.24.1";
 
-const TIER_COLORS: Record<string, string> = {
-  CHALLENGER:  "text-yellow-300",
-  GRANDMASTER: "text-red-400",
-  MASTER:      "text-purple-400",
-  DIAMOND:     "text-blue-400",
-  EMERALD:     "text-emerald-400",
-  PLATINUM:    "text-teal-400",
-  GOLD:        "text-yellow-500",
-  SILVER:      "text-gray-400",
-  BRONZE:      "text-orange-700",
-  IRON:        "text-gray-500",
-  UNRANKED:    "text-gray-600",
-};
-
 const TIER_HEX: Record<string, string> = {
   CHALLENGER:  "#F4C874",
   GRANDMASTER: "#CD4545",
@@ -34,70 +20,97 @@ const TIER_HEX: Record<string, string> = {
   UNRANKED:    "#4B5563",
 };
 
+const TIER_EMBLEM: Record<string, string> = {
+  CHALLENGER:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-challenger.png",
+  GRANDMASTER:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-grandmaster.png",
+  MASTER:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-master.png",
+  DIAMOND:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-diamond.png",
+  EMERALD:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-emerald.png",
+  PLATINUM:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-platinum.png",
+  GOLD:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-gold.png",
+  SILVER:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-silver.png",
+  BRONZE:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-bronze.png",
+  IRON:
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/images/ranked-emblem/emblem-iron.png",
+};
+
 const ROLE_ORDER: Record<string, number> = {
   TOP: 0, JUNGLE: 1, MID: 2, ADC: 3, SUPPORT: 4,
 };
-
 const ROLE_LABELS: Record<string, string> = {
   TOP: "Top", JUNGLE: "Jungle", MID: "Mid", ADC: "ADC", SUPPORT: "Suporte",
 };
-
-const ROLE_ICONS: Record<string, string> = {
-  TOP: "🛡️", JUNGLE: "🌿", MID: "⚡", ADC: "🏹", SUPPORT: "💊",
+const ROLE_ICON_URL: Record<string, string> = {
+  TOP:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
+  JUNGLE:  "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-jungle.svg",
+  MID:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-middle.svg",
+  ADC:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-bottom.svg",
+  SUPPORT: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-utility.svg",
 };
 
-// ── Componente de Badge de Tier ────────────────────────────────────────────
-function TierBadge({ tier, rank }: { tier?: string | null; rank?: string | null }) {
-  const t = tier ?? "UNRANKED";
+// ── TierBadge ──────────────────────────────────────────────────────────────
+function TierBadge({ tier, rank, lp }: { tier?: string | null; rank?: string | null; lp?: number | null }) {
+  const t = (tier ?? "UNRANKED").toUpperCase();
   const color = TIER_HEX[t] ?? TIER_HEX.UNRANKED;
+  const emblem = TIER_EMBLEM[t];
   const label = t === "UNRANKED" ? "Unranked" : `${t} ${rank ?? ""}`.trim();
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border"
+      className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded-full border"
       style={{ color, borderColor: `${color}40`, background: `${color}12` }}
     >
+      {emblem && (
+        <img src={emblem} alt={t} width={14} height={14} loading="lazy" style={{ filter: "drop-shadow(0 0 2px currentColor)" }} />
+      )}
       {label}
+      {lp != null && lp > 0 && (
+        <span className="opacity-70 font-normal">· {lp} LP</span>
+      )}
     </span>
   );
 }
 
-// ── Componente Avatar do Jogador ──────────────────────────────────────────
-function PlayerAvatar({ iconId, name, size = 40 }: { iconId?: number | null; name: string; size?: number }) {
+// ── PlayerAvatar ───────────────────────────────────────────────────────────
+function PlayerAvatar({ iconId, name, size = 44 }: { iconId?: number | null; name: string; size?: number }) {
   const url = iconId
     ? `https://ddragon.leagueoflegends.com/cdn/${DDRAGON}/img/profileicon/${iconId}.png`
     : null;
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt={name}
-        width={size} height={size}
-        loading="lazy"
-        className="rounded-full border-2 border-[#1E3A5F] object-cover flex-shrink-0"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-  return (
-    <div
-      className="rounded-full bg-[#0A1428] border-2 border-[#1E3A5F] flex items-center justify-center text-lg flex-shrink-0"
-      style={{ width: size, height: size }}
-    >
+  return url ? (
+    <img src={url} alt={name} width={size} height={size} loading="lazy"
+      className="rounded-full object-cover flex-shrink-0"
+      style={{ width: size, height: size, border: "2px solid rgba(200,168,75,0.3)" }} />
+  ) : (
+    <div className="rounded-full bg-[#0A1428] flex items-center justify-center text-lg flex-shrink-0"
+      style={{ width: size, height: size, border: "2px solid #1E3A5F" }}>
       🎮
     </div>
   );
 }
 
-// ── Stat Card ──────────────────────────────────────────────────────────────
-function StatCard({ value, label, color = "text-white" }: { value: string | number; label: string; color?: string }) {
+// ── StatPill ───────────────────────────────────────────────────────────────
+function StatPill({
+  value, label, color = "#ffffff",
+}: { value: string | number; label: string; color?: string }) {
   return (
-    <div className="text-center px-4 py-3">
-      <p className={`font-bold text-2xl tabular-nums ${color}`}>{value}</p>
-      <p className="text-gray-500 text-xs mt-0.5 uppercase tracking-wider">{label}</p>
+    <div className="flex flex-col items-center px-5 py-3">
+      <span className="font-black text-2xl tabular-nums leading-none" style={{ color }}>
+        {value}
+      </span>
+      <span className="text-[10px] uppercase tracking-widest text-gray-500 mt-1">{label}</span>
     </div>
   );
 }
 
+// ── Main Page ──────────────────────────────────────────────────────────────
 export default async function TimeDetailPage({
   params,
 }: {
@@ -113,39 +126,32 @@ export default async function TimeDetailPage({
 
   if (!team) notFound();
 
-  // ── Jogadores ──────────────────────────────────────────────────────────
+  // ── Jogadores ─────────────────────────────────────────────────────────
   const { data: players } = await admin
     .from("players")
     .select("id, summoner_name, tag_line, tier, rank, lp, wins, losses, role, profile_icon, summoner_level")
-    .eq("team_id", team.id)
-    .order("lp", { ascending: false });
+    .eq("team_id", team.id);
 
   const sortedPlayers = (players ?? []).sort(
-    (a, b) => (ROLE_ORDER[a.role ?? ""] ?? 99) - (ROLE_ORDER[b.role ?? ""] ?? 99)
+    (a, b) => (ROLE_ORDER[a.role ?? ""] ?? 99) - (ROLE_ORDER[b.role ?? ""] ?? 99),
   );
 
-  // ── Partidas ───────────────────────────────────────────────────────────
+  // ── Partidas ──────────────────────────────────────────────────────────
   const [{ data: matchesA }, { data: matchesB }] = await Promise.all([
     admin
       .from("matches")
-      .select(`
-        id, round, status, score_a, score_b, format, scheduled_at, played_at,
-        winner_id, team_a_id, team_b_id,
-        team_b:teams!matches_team_b_id_fkey(id, name, tag, logo_url),
-        tournament:tournaments!matches_tournament_id_fkey(id, name, slug)
-      `)
+      .select(`id,round,status,score_a,score_b,scheduled_at,played_at,winner_id,team_a_id,team_b_id,
+        team_b:teams!matches_team_b_id_fkey(id,name,tag,logo_url),
+        tournament:tournaments!matches_tournament_id_fkey(id,name,slug)`)
       .eq("team_a_id", team.id)
       .in("status", ["FINISHED", "IN_PROGRESS", "SCHEDULED"])
       .order("scheduled_at", { ascending: false })
       .limit(30),
     admin
       .from("matches")
-      .select(`
-        id, round, status, score_a, score_b, format, scheduled_at, played_at,
-        winner_id, team_a_id, team_b_id,
-        team_a:teams!matches_team_a_id_fkey(id, name, tag, logo_url),
-        tournament:tournaments!matches_tournament_id_fkey(id, name, slug)
-      `)
+      .select(`id,round,status,score_a,score_b,scheduled_at,played_at,winner_id,team_a_id,team_b_id,
+        team_a:teams!matches_team_a_id_fkey(id,name,tag,logo_url),
+        tournament:tournaments!matches_tournament_id_fkey(id,name,slug)`)
       .eq("team_b_id", team.id)
       .in("status", ["FINISHED", "IN_PROGRESS", "SCHEDULED"])
       .order("scheduled_at", { ascending: false })
@@ -153,19 +159,20 @@ export default async function TimeDetailPage({
   ]);
 
   const allMatches = [
-    ...(matchesA ?? []).map(m => ({ ...m, side: "A" as const })),
-    ...(matchesB ?? []).map(m => ({ ...m, side: "B" as const })),
-  ].sort((a, b) =>
-    new Date(b.scheduled_at ?? b.played_at ?? 0).getTime() -
-    new Date(a.scheduled_at ?? a.played_at ?? 0).getTime()
+    ...(matchesA ?? []).map((m) => ({ ...m, side: "A" as const })),
+    ...(matchesB ?? []).map((m) => ({ ...m, side: "B" as const })),
+  ].sort(
+    (a, b) =>
+      new Date(b.scheduled_at ?? b.played_at ?? 0).getTime() -
+      new Date(a.scheduled_at ?? a.played_at ?? 0).getTime(),
   );
 
-  const wins   = allMatches.filter(m => m.status === "FINISHED" && m.winner_id === team.id).length;
-  const losses = allMatches.filter(m => m.status === "FINISHED" && m.winner_id && m.winner_id !== team.id).length;
+  const wins   = allMatches.filter((m) => m.status === "FINISHED" && m.winner_id === team.id).length;
+  const losses = allMatches.filter((m) => m.status === "FINISHED" && m.winner_id && m.winner_id !== team.id).length;
   const total  = wins + losses;
   const wr     = total > 0 ? Math.round((wins / total) * 100) : 0;
 
-  // Torneios únicos do histórico
+  // Torneios únicos
   const tournamentMap: Record<string, any> = {};
   for (const m of allMatches) {
     const t = (m as any).tournament;
@@ -176,7 +183,7 @@ export default async function TimeDetailPage({
   // Torneios ativos
   const { data: activeRegs } = await admin
     .from("inscricoes")
-    .select("tournament_id, tournaments!inscricoes_tournament_id_fkey(id, name, slug, status)")
+    .select("tournament_id, tournaments!inscricoes_tournament_id_fkey(id,name,slug,status)")
     .eq("team_id", team.id);
 
   const activeTournaments = (activeRegs ?? [])
@@ -184,99 +191,309 @@ export default async function TimeDetailPage({
     .filter(Boolean)
     .filter((t: any) => ["OPEN", "IN_PROGRESS", "CHECKIN"].includes(t.status));
 
-  // ── Cor dominante do banner ────────────────────────────────────────────
-  const bannerBg = team.logo_url
-    ? "bg-gradient-to-b from-[#0D1B2E] via-[#0A1428] to-[#050E1A]"
-    : "bg-gradient-to-br from-[#0D1B2E] via-[#091525] to-[#050E1A]";
+  // Média de tier para "força do time"
+  const tierOrder: Record<string, number> = {
+    CHALLENGER: 10, GRANDMASTER: 9, MASTER: 8,
+    DIAMOND: 7, EMERALD: 6, PLATINUM: 5, GOLD: 4,
+    SILVER: 3, BRONZE: 2, IRON: 1, UNRANKED: 0,
+  };
+  const rankedPlayers = sortedPlayers.filter((p) => p.tier && p.tier !== "UNRANKED");
+  const avgTierIdx =
+    rankedPlayers.length > 0
+      ? Math.round(
+          rankedPlayers.reduce((acc, p) => acc + (tierOrder[(p.tier ?? "").toUpperCase()] ?? 0), 0) /
+            rankedPlayers.length,
+        )
+      : -1;
+  const avgTierName = Object.entries(tierOrder).find(([, v]) => v === avgTierIdx)?.[0] ?? null;
 
   return (
     <div className="min-h-screen bg-[#050E1A]">
 
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {/* BANNER HERO                                                      */}
-      {/* ════════════════════════════════════════════════════════════════ */}
-      <div className={`relative w-full overflow-hidden ${bannerBg}`}>
-        {/* Fundo decorativo: gradiente radial saindo do logo */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* BANNER HERO MELHORADO                                          */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <div className="relative w-full overflow-hidden" style={{ minHeight: 280 }}>
+
+        {/* Camada 1 — fundo escuro base */}
+        <div className="absolute inset-0 bg-[#050E1A]" />
+
+        {/* Camada 2 — logo espelhado/blurred como wallpaper se existir */}
+        {team.logo_url && (
+          <>
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundImage: `url(${team.logo_url})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                filter: "blur(48px) saturate(1.4) brightness(0.25)",
+                transform: "scale(1.15)",
+              }}
+            />
+            {/* Overlay gradiente escuro sobre o fundo */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(5,14,26,0.55) 0%, rgba(5,14,26,0.80) 60%, #050E1A 100%)",
+              }}
+            />
+          </>
+        )}
+
+        {/* Camada 3 — gradiente radial dourado saindo do logo */}
         <div
-          className="absolute inset-0 opacity-20 pointer-events-none"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            background: `radial-gradient(ellipse 60% 80% at 50% 0%, #C8A84B33, transparent 70%)`,
+            background:
+              "radial-gradient(ellipse 70% 60% at 50% 0%, rgba(200,168,75,0.12) 0%, transparent 70%)",
           }}
         />
 
         {/* Linha dourada no topo */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C8A84B] to-transparent opacity-60" />
+        <div
+          className="absolute top-0 left-0 right-0 h-[2px]"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 0%, #C8A84B 30%, #F4C874 50%, #C8A84B 70%, transparent 100%)",
+            opacity: 0.7,
+          }}
+        />
 
-        <div className="relative max-w-5xl mx-auto px-4 md:px-6 pt-10 pb-6">
-          <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5">
+        {/* Partículas hexagonais decorativas (SVG inline) */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.04]"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <defs>
+            <pattern id="hex" x="0" y="0" width="60" height="52" patternUnits="userSpaceOnUse">
+              <polygon
+                points="30,2 58,16 58,44 30,58 2,44 2,16"
+                fill="none"
+                stroke="#C8A84B"
+                strokeWidth="0.8"
+              />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#hex)" />
+        </svg>
 
-            {/* Logo grande */}
-            <div className="flex-shrink-0 relative">
+        {/* ── Conteúdo do banner ──────────────────────────────────── */}
+        <div className="relative max-w-5xl mx-auto px-4 md:px-6 pt-10 pb-0">
+          <div className="flex flex-col sm:flex-row items-center sm:items-end gap-6">
+
+            {/* Logo com borda dourada animada */}
+            <div className="relative flex-shrink-0 group">
+              <div
+                className="absolute -inset-[3px] rounded-2xl opacity-60"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #C8A84B, #F4C874, #8B6914, #C8A84B)",
+                  borderRadius: "18px",
+                }}
+              />
               {team.logo_url ? (
                 <img
                   src={team.logo_url}
                   alt={team.name}
-                  width={112} height={112}
-                  className="w-28 h-28 rounded-2xl object-cover border-2 border-[#C8A84B]/40 shadow-2xl shadow-black/60"
+                  width={120}
+                  height={120}
+                  className="relative w-[120px] h-[120px] rounded-2xl object-cover shadow-2xl"
+                  style={{ boxShadow: "0 8px 32px rgba(200,168,75,0.25), 0 2px 8px rgba(0,0,0,0.8)" }}
                 />
               ) : (
-                <div className="w-28 h-28 rounded-2xl bg-[#0A1428] border-2 border-[#C8A84B]/30 flex items-center justify-center text-5xl shadow-2xl shadow-black/60">
+                <div
+                  className="relative w-[120px] h-[120px] rounded-2xl bg-[#0A1428] flex items-center justify-center text-6xl shadow-2xl"
+                  style={{ boxShadow: "0 8px 32px rgba(200,168,75,0.15)" }}
+                >
                   🛡️
                 </div>
               )}
+              {/* Reflexo brilhante no logo */}
+              <div
+                className="absolute top-0 left-0 right-0 h-1/2 rounded-t-2xl pointer-events-none opacity-10"
+                style={{
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.6) 0%, transparent 100%)",
+                }}
+              />
             </div>
 
-            {/* Nome e info */}
-            <div className="flex-1 min-w-0 text-center sm:text-left pb-1">
-              <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
-                <span className="text-[#C8A84B] text-xs font-bold uppercase tracking-[0.2em] bg-[#C8A84B]/10 border border-[#C8A84B]/20 px-2 py-0.5 rounded">
+            {/* Informações do time */}
+            <div className="flex-1 min-w-0 text-center sm:text-left pb-2">
+              {/* Tag + região */}
+              <div className="flex items-center justify-center sm:justify-start gap-2 mb-2">
+                <span
+                  className="text-xs font-black uppercase tracking-[0.25em] px-3 py-1 rounded border"
+                  style={{
+                    color: "#C8A84B",
+                    borderColor: "rgba(200,168,75,0.35)",
+                    background: "rgba(200,168,75,0.08)",
+                    letterSpacing: "0.22em",
+                  }}
+                >
                   {team.tag}
                 </span>
                 {team.region && (
-                  <span className="text-gray-600 text-xs uppercase tracking-widest">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600 bg-[#0A1428] border border-[#1E3A5F] px-2 py-1 rounded">
                     {team.region}
                   </span>
                 )}
+                {activeTournaments.length > 0 && (
+                  <span
+                    className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded"
+                    style={{
+                      background: "rgba(200,168,75,0.15)",
+                      color: "#C8A84B",
+                      border: "1px solid rgba(200,168,75,0.3)",
+                    }}
+                  >
+                    🏆 Em torneio
+                  </span>
+                )}
               </div>
-              <h1 className="text-white font-bold text-3xl md:text-4xl leading-tight">
+
+              {/* Nome principal */}
+              <h1
+                className="font-black leading-none tracking-tight"
+                style={{
+                  fontSize: "clamp(2rem, 5vw, 3rem)",
+                  color: "#fff",
+                  textShadow: "0 2px 20px rgba(0,0,0,0.8)",
+                }}
+              >
                 {team.name}
               </h1>
+
+              {/* Descrição */}
               {team.description && (
                 <p className="text-gray-400 text-sm mt-2 max-w-xl leading-relaxed">
                   {team.description}
                 </p>
               )}
+
+              {/* Média de tier dos jogadores */}
+              {avgTierName && (
+                <div className="flex items-center justify-center sm:justify-start gap-2 mt-3">
+                  {TIER_EMBLEM[avgTierName] && (
+                    <img
+                      src={TIER_EMBLEM[avgTierName]}
+                      alt={avgTierName}
+                      width={20}
+                      height={20}
+                      loading="lazy"
+                    />
+                  )}
+                  <span className="text-xs text-gray-500">
+                    Força média do roster:{" "}
+                    <span className="font-bold" style={{ color: TIER_HEX[avgTierName] }}>
+                      {avgTierName}
+                    </span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* ── Stats bar ──────────────────────────────────────────────── */}
-          <div className="mt-6 flex flex-wrap justify-center sm:justify-start divide-x divide-[#1E3A5F] border border-[#1E3A5F] rounded-xl bg-[#0A1428]/60 backdrop-blur-sm w-fit">
-            <StatCard value={wins} label="Vitórias" color="text-[#C8A84B]" />
-            <StatCard value={losses} label="Derrotas" color="text-red-400" />
-            <StatCard
-              value={`${wr}%`}
-              label="Winrate"
-              color={wr >= 50 ? "text-emerald-400" : "text-red-400"}
-            />
-            <StatCard value={sortedPlayers.length} label="Jogadores" color="text-blue-400" />
-            {total > 0 && (
-              <StatCard value={total} label="Partidas" />
-            )}
+          {/* ── Stats pills ─────────────────────────────────────────── */}
+          <div className="mt-6 flex flex-wrap justify-center sm:justify-start">
+            <div
+              className="inline-flex divide-x rounded-xl overflow-hidden"
+              style={{
+                background: "rgba(10,20,40,0.75)",
+                backdropFilter: "blur(12px)",
+                border: "1px solid rgba(30,58,95,0.8)",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+              }}
+            >
+              <StatPill value={wins} label="Vitórias" color="#2AC56F" />
+              <StatPill value={losses} label="Derrotas" color="#EF4444" />
+              <StatPill
+                value={`${wr}%`}
+                label="Winrate"
+                color={wr >= 50 ? "#2AC56F" : "#EF4444"}
+              />
+              <StatPill value={sortedPlayers.length} label="Jogadores" color="#576BCE" />
+              {total > 0 && <StatPill value={total} label="Partidas" color="#C8A84B" />}
+              {tournamentsParticipated.length > 0 && (
+                <StatPill value={tournamentsParticipated.length} label="Torneios" color="#9D48E0" />
+              )}
+            </div>
+          </div>
+
+          {/* ── Barra de WR visual ──────────────────────────────────── */}
+          {total > 0 && (
+            <div className="mt-3 w-full max-w-xs">
+              <div className="flex justify-between text-[10px] text-gray-600 mb-1">
+                <span>{wins}V</span>
+                <span>{losses}D</span>
+              </div>
+              <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#1a2d45]">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${wr}%`,
+                    background:
+                      wr >= 60
+                        ? "linear-gradient(90deg,#2AC56F,#34d58a)"
+                        : wr >= 50
+                        ? "linear-gradient(90deg,#C8A84B,#F4C874)"
+                        : "linear-gradient(90deg,#EF4444,#f87171)",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Abas de navegação (estilo Leaguepedia) ──────────────── */}
+          <div
+            className="flex gap-0 mt-8 border-b"
+            style={{ borderColor: "rgba(30,58,95,0.7)" }}
+          >
+            {[
+              { label: "👥 Roster", href: "#roster" },
+              { label: "⚔️ Partidas", href: "#partidas" },
+              { label: "📋 Torneios", href: "#torneios" },
+            ].map((tab) => (
+              <a
+                key={tab.href}
+                href={tab.href}
+                className="px-5 py-2.5 text-sm font-semibold transition-all relative"
+                style={{ color: "#9CA3AF" }}
+                onMouseOver={(e) =>
+                  ((e.currentTarget as HTMLElement).style.color = "#C8A84B")
+                }
+                onMouseOut={(e) =>
+                  ((e.currentTarget as HTMLElement).style.color = "#9CA3AF")
+                }
+              >
+                {tab.label}
+                <span
+                  className="absolute bottom-0 left-0 right-0 h-[2px] opacity-0 hover:opacity-100 transition-opacity"
+                  style={{ background: "#C8A84B" }}
+                />
+              </a>
+            ))}
           </div>
         </div>
-
-        {/* Linha divisória inferior */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#1E3A5F] to-transparent" />
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {/* CONTEÚDO PRINCIPAL                                               */}
-      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* CONTEÚDO PRINCIPAL                                             */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 space-y-5">
 
         {/* Torneios Ativos */}
         {activeTournaments.length > 0 && (
-          <div className="bg-[#0D1B2E] border border-[#C8A84B]/20 rounded-xl p-4">
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: "rgba(200,168,75,0.05)",
+              border: "1px solid rgba(200,168,75,0.2)",
+            }}
+          >
             <h2 className="text-[#C8A84B] font-bold text-xs uppercase tracking-widest mb-3">
               🏆 Participando Agora
             </h2>
@@ -285,7 +502,12 @@ export default async function TimeDetailPage({
                 <Link
                   key={t.id}
                   href={`/torneios/${t.slug}`}
-                  className="bg-[#C8A84B]/10 border border-[#C8A84B]/30 hover:border-[#C8A84B]/70 text-[#C8A84B] text-xs font-medium rounded-lg px-3 py-2 transition-all hover:bg-[#C8A84B]/20"
+                  className="border text-xs font-medium rounded-lg px-3 py-2 transition-all"
+                  style={{
+                    background: "rgba(200,168,75,0.08)",
+                    borderColor: "rgba(200,168,75,0.3)",
+                    color: "#C8A84B",
+                  }}
                 >
                   {t.name} →
                 </Link>
@@ -294,10 +516,16 @@ export default async function TimeDetailPage({
           </div>
         )}
 
-        {/* ── ROSTER ──────────────────────────────────────────────────── */}
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-xl overflow-hidden">
-          {/* Header da seção */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#1E3A5F]">
+        {/* ── ROSTER ─────────────────────────────────────────────────── */}
+        <div
+          id="roster"
+          className="rounded-xl overflow-hidden"
+          style={{ background: "#0D1B2E", border: "1px solid #1E3A5F" }}
+        >
+          <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{ borderBottom: "1px solid #1E3A5F" }}
+          >
             <h2 className="text-white font-bold text-sm">
               👥 Roster
               <span className="text-gray-600 font-normal ml-2">
@@ -312,27 +540,41 @@ export default async function TimeDetailPage({
               <p className="text-gray-500 text-sm">Sem jogadores vinculados ao time.</p>
             </div>
           ) : (
-            <div className="divide-y divide-[#1E3A5F]/60">
+            <div>
               {sortedPlayers.map((p, i) => {
                 const gamesPlayed = (p.wins ?? 0) + (p.losses ?? 0);
-                const playerWr = gamesPlayed > 0
-                  ? Math.round(((p.wins ?? 0) / gamesPlayed) * 100)
-                  : 0;
+                const playerWr =
+                  gamesPlayed > 0 ? Math.round(((p.wins ?? 0) / gamesPlayed) * 100) : 0;
+                const tierColor =
+                  TIER_HEX[(p.tier ?? "UNRANKED").toUpperCase()] ?? "#4B5563";
 
                 return (
                   <div
                     key={p.id}
-                    className="flex items-center gap-3 md:gap-4 px-4 py-3 hover:bg-[#0A1428]/80 transition-colors group"
+                    className="flex items-center gap-3 md:gap-4 px-4 py-3 transition-colors group"
+                    style={{ borderBottom: i < sortedPlayers.length - 1 ? "1px solid rgba(30,58,95,0.5)" : "none" }}
                   >
                     {/* Número */}
                     <span className="text-gray-700 text-xs font-bold w-4 text-center flex-shrink-0 tabular-nums">
                       {i + 1}
                     </span>
 
-                    {/* Role icon */}
+                    {/* Ícone de role (CDragon SVG) */}
                     <div className="flex flex-col items-center gap-0.5 w-10 flex-shrink-0">
-                      <span className="text-xl leading-none">{ROLE_ICONS[p.role ?? ""] ?? "❓"}</span>
-                      <span className="text-gray-700 text-[10px] uppercase tracking-wide">
+                      {ROLE_ICON_URL[p.role ?? ""] ? (
+                        <img
+                          src={ROLE_ICON_URL[p.role ?? ""]}
+                          alt={p.role ?? ""}
+                          width={22}
+                          height={22}
+                          loading="lazy"
+                          className="opacity-70 group-hover:opacity-100 transition-opacity"
+                          style={{ filter: "invert(1) sepia(1) saturate(2) hue-rotate(10deg)" }}
+                        />
+                      ) : (
+                        <span className="text-xl">❓</span>
+                      )}
+                      <span className="text-gray-700 text-[9px] uppercase tracking-wide">
                         {ROLE_LABELS[p.role ?? ""] ?? "—"}
                       </span>
                     </div>
@@ -340,9 +582,12 @@ export default async function TimeDetailPage({
                     {/* Avatar */}
                     <PlayerAvatar iconId={p.profile_icon} name={p.summoner_name ?? ""} size={44} />
 
-                    {/* Summoner info */}
+                    {/* Info do summoner */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold text-sm truncate group-hover:text-[#C8A84B] transition-colors">
+                      <p
+                        className="font-semibold text-sm truncate transition-colors"
+                        style={{ color: "#fff" }}
+                      >
                         {p.summoner_name}
                         <span className="text-gray-600 font-normal text-xs">#{p.tag_line}</span>
                       </p>
@@ -351,24 +596,24 @@ export default async function TimeDetailPage({
                           <span className="text-gray-600 text-xs">Nível {p.summoner_level}</span>
                         )}
                         {gamesPlayed > 0 && (
-                          <span className={`text-xs font-medium ${playerWr >= 50 ? "text-emerald-400" : "text-red-400"}`}>
-                            {playerWr}% WR
-                          </span>
-                        )}
-                        {gamesPlayed > 0 && (
-                          <span className="text-gray-700 text-xs">
-                            {p.wins}W / {p.losses}L
-                          </span>
+                          <>
+                            <span
+                              className="text-xs font-medium"
+                              style={{ color: playerWr >= 50 ? "#2AC56F" : "#EF4444" }}
+                            >
+                              {playerWr}% WR
+                            </span>
+                            <span className="text-gray-700 text-xs">
+                              {p.wins}V / {p.losses}D
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>
 
-                    {/* Rank badge — visível em md+ */}
+                    {/* Rank badge com emblema */}
                     <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0">
-                      <TierBadge tier={p.tier} rank={p.rank} />
-                      <span className="text-gray-600 text-xs tabular-nums">
-                        {p.lp ?? 0} LP
-                      </span>
+                      <TierBadge tier={p.tier} rank={p.rank} lp={p.lp} />
                     </div>
                   </div>
                 );
@@ -377,22 +622,31 @@ export default async function TimeDetailPage({
           )}
         </div>
 
-        {/* ── PARTIDAS RECENTES ───────────────────────────────────────── */}
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#1E3A5F]">
+        {/* ── PARTIDAS RECENTES ─────────────────────────────────────── */}
+        <div
+          id="partidas"
+          className="rounded-xl overflow-hidden"
+          style={{ background: "#0D1B2E", border: "1px solid #1E3A5F" }}
+        >
+          <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{ borderBottom: "1px solid #1E3A5F" }}
+          >
             <h2 className="text-white font-bold text-sm">
               ⚔️ Partidas Recentes
-              {allMatches.length > 0 && (
+              {total > 0 && (
                 <span className="text-gray-600 font-normal ml-2">{total} disputadas</span>
               )}
             </h2>
             {total > 0 && (
-              <div className="flex items-center gap-1">
-                {/* Mini winrate bar */}
+              <div className="flex items-center gap-1.5">
                 <div className="w-20 h-1.5 bg-[#1E3A5F] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-[#C8A84B] rounded-full transition-all"
-                    style={{ width: `${wr}%` }}
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${wr}%`,
+                      background: wr >= 50 ? "#2AC56F" : "#EF4444",
+                    }}
                   />
                 </div>
                 <span className="text-xs text-gray-500 tabular-nums">{wr}%</span>
@@ -406,44 +660,67 @@ export default async function TimeDetailPage({
               <p className="text-gray-500 text-sm">Nenhuma partida registrada.</p>
             </div>
           ) : (
-            <div className="divide-y divide-[#1E3A5F]/60">
-              {allMatches.slice(0, 10).map(m => {
-                const isFinished = m.status === "FINISHED";
+            <div>
+              {allMatches.slice(0, 10).map((m, i) => {
+                const isFinished  = m.status === "FINISHED";
                 const isScheduled = m.status === "SCHEDULED";
                 const won  = isFinished && m.winner_id === team.id;
                 const lost = isFinished && m.winner_id && m.winner_id !== team.id;
                 const opp  = m.side === "A" ? (m as any).team_b : (m as any).team_a;
-                const tourn = (m as any).tournament;
-                const scoreA = m.side === "A" ? m.score_a : m.score_b;
-                const scoreB = m.side === "A" ? m.score_b : m.score_a;
-                const dateStr = m.played_at ?? m.scheduled_at;
+                const tourn    = (m as any).tournament;
+                const scoreA   = m.side === "A" ? m.score_a : m.score_b;
+                const scoreB   = m.side === "A" ? m.score_b : m.score_a;
+                const dateStr  = m.played_at ?? m.scheduled_at;
+                const resultBg = won
+                  ? "rgba(42,197,111,0.12)"
+                  : lost
+                  ? "rgba(239,68,68,0.08)"
+                  : "transparent";
 
                 return (
                   <div
                     key={m.id}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-[#0A1428]/60 transition-colors"
+                    className="flex items-center gap-3 px-4 py-3 transition-colors"
+                    style={{
+                      borderBottom: i < Math.min(allMatches.length, 10) - 1 ? "1px solid rgba(30,58,95,0.45)" : "none",
+                      background: resultBg,
+                    }}
                   >
-                    {/* Resultado badge */}
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-                      won  ? "bg-emerald-500/15 text-emerald-400" :
-                      lost ? "bg-red-500/15 text-red-400" :
-                      isScheduled ? "bg-blue-500/15 text-blue-400" :
-                             "bg-gray-800 text-gray-500"
-                    }`}>
+                    {/* Badge V/D */}
+                    <div
+                      className="w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs flex-shrink-0"
+                      style={{
+                        background: won
+                          ? "rgba(42,197,111,0.18)"
+                          : lost
+                          ? "rgba(239,68,68,0.18)"
+                          : isScheduled
+                          ? "rgba(87,107,206,0.18)"
+                          : "#1E3A5F",
+                        color: won ? "#2AC56F" : lost ? "#EF4444" : isScheduled ? "#576BCE" : "#6B7280",
+                      }}
+                    >
                       {won ? "V" : lost ? "D" : isScheduled ? "◷" : "—"}
                     </div>
 
-                    {/* Oponente + torneio */}
+                    {/* Oponente */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         {opp?.logo_url ? (
-                          <img src={opp.logo_url} alt={opp.name} width={20} height={20} className="w-5 h-5 rounded object-cover" loading="lazy" />
+                          <img
+                            src={opp.logo_url}
+                            alt={opp.name}
+                            width={20}
+                            height={20}
+                            className="w-5 h-5 rounded object-cover"
+                            loading="lazy"
+                          />
                         ) : (
-                          <span className="text-base leading-none">🛡️</span>
+                          <span className="text-base leading-none opacity-50">🛡️</span>
                         )}
                         <span className="text-gray-300 text-sm truncate">
                           vs{" "}
-                          <span className="text-white font-medium">
+                          <span className="text-white font-semibold">
                             {opp ? `[${opp.tag}] ${opp.name}` : "Adversário"}
                           </span>
                         </span>
@@ -460,7 +737,7 @@ export default async function TimeDetailPage({
                         {tourn?.slug && (
                           <Link
                             href={`/torneios/${tourn.slug}`}
-                            className="text-blue-400/70 hover:text-blue-400 text-xs transition-colors"
+                            className="text-blue-400/60 hover:text-blue-400 text-xs transition-colors"
                           >
                             {tourn.name}
                           </Link>
@@ -470,14 +747,15 @@ export default async function TimeDetailPage({
 
                     {/* Placar */}
                     {isFinished && (
-                      <div className={`text-right flex-shrink-0 font-bold text-sm tabular-nums ${
-                        won ? "text-emerald-400" : lost ? "text-red-400" : "text-gray-300"
-                      }`}>
+                      <div
+                        className="text-right flex-shrink-0 font-black text-sm tabular-nums"
+                        style={{ color: won ? "#2AC56F" : lost ? "#EF4444" : "#9CA3AF" }}
+                      >
                         {scoreA ?? 0} – {scoreB ?? 0}
                       </div>
                     )}
                     {isScheduled && (
-                      <span className="text-blue-400/70 text-xs flex-shrink-0">Agendado</span>
+                      <span className="text-blue-400/60 text-xs flex-shrink-0">Agendado</span>
                     )}
                   </div>
                 );
@@ -486,25 +764,36 @@ export default async function TimeDetailPage({
           )}
         </div>
 
-        {/* ── HISTÓRICO DE TORNEIOS ───────────────────────────────────── */}
+        {/* ── HISTÓRICO DE TORNEIOS ─────────────────────────────────── */}
         {tournamentsParticipated.length > 0 && (
-          <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#1E3A5F]">
-              <h2 className="text-white font-bold text-sm">
-                📋 Histórico de Torneios
-              </h2>
+          <div
+            id="torneios"
+            className="rounded-xl overflow-hidden"
+            style={{ background: "#0D1B2E", border: "1px solid #1E3A5F" }}
+          >
+            <div className="px-4 py-3" style={{ borderBottom: "1px solid #1E3A5F" }}>
+              <h2 className="text-white font-bold text-sm">📋 Histórico de Torneios</h2>
             </div>
-            <div className="divide-y divide-[#1E3A5F]/60">
-              {tournamentsParticipated.map((t: any) => (
+            <div>
+              {tournamentsParticipated.map((t: any, i: number) => (
                 <Link
                   key={t.id}
                   href={`/torneios/${t.slug}`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-[#0A1428]/80 transition-colors group"
+                  className="flex items-center justify-between px-4 py-3 transition-colors group"
+                  style={{
+                    borderBottom:
+                      i < tournamentsParticipated.length - 1
+                        ? "1px solid rgba(30,58,95,0.45)"
+                        : "none",
+                  }}
                 >
                   <span className="text-gray-300 text-sm group-hover:text-white transition-colors">
                     {t.name}
                   </span>
-                  <span className="text-[#C8A84B] text-xs font-medium opacity-60 group-hover:opacity-100 transition-opacity">
+                  <span
+                    className="text-xs font-medium opacity-50 group-hover:opacity-100 transition-opacity"
+                    style={{ color: "#C8A84B" }}
+                  >
                     Ver →
                   </span>
                 </Link>
@@ -513,14 +802,18 @@ export default async function TimeDetailPage({
           </div>
         )}
 
-        {/* ── RODAPÉ DE NAVEGAÇÃO ─────────────────────────────────────── */}
+        {/* ── Navegação rodapé ─────────────────────────────────────── */}
         <div className="flex items-center justify-between pt-2 pb-6">
-          <Link href="/times" className="flex items-center gap-1.5 text-gray-500 hover:text-white text-sm transition-colors">
+          <Link
+            href="/times"
+            className="flex items-center gap-1.5 text-gray-500 hover:text-white text-sm transition-colors"
+          >
             ← Todos os Times
           </Link>
           <Link
             href="/dashboard/times/criar"
-            className="text-[#C8A84B] hover:text-[#d4b55a] text-sm transition-colors"
+            className="text-sm font-medium transition-colors"
+            style={{ color: "#C8A84B" }}
           >
             + Criar Time
           </Link>
