@@ -1,5 +1,13 @@
 # Cron — Monitoramento da Riot API
 
+> Para entender onde este cron entra no fluxo geral do sistema (como ele interage com o Supabase, com a Riot API e com as notificações Discord), veja também `docs/BRLOL-DOCS-UNIFICADO.md` nas seções:
+>
+> - "Riot Games API — Visão unificada"
+> - "Edge Functions Supabase" (integrações externas e notificações)
+> - "Fluxos principais de negócio" (monitoramento e operação do torneio)
+
+---
+
 ## Configuração no Vercel
 
 O arquivo `vercel.json` na raiz do projeto configura o cron job:

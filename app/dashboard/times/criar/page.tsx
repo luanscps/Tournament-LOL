@@ -3,8 +3,10 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+// FIX: adicionado puuid à interface
 interface RiotAccount {
   id: string;
+  puuid: string;
   game_name: string;
   tag_line: string;
   summoner_level: number;
@@ -18,6 +20,8 @@ interface PlayerSlot {
   tier: string;
   rank: string;
   lp: number;
+  wins: number;
+  losses: number;
   profileIconId: number | null;
   role: "TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT";
 }
@@ -78,9 +82,10 @@ function CriarTimeForm() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
+      // FIX: busca puuid junto com os outros campos
       const { data: acct } = await supabase
         .from("riot_accounts")
-        .select("id, game_name, tag_line, summoner_level, profile_icon_id")
+        .select("id, puuid, game_name, tag_line, summoner_level, profile_icon_id")
         .eq("profile_id", user.id)
         .eq("is_primary", true)
         .single();
@@ -166,7 +171,7 @@ function CriarTimeForm() {
 
       const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
-      // Cria o time (tournament_id é opcional agora)
+      // Cria o time (tournament_id é opcional)
       const insertPayload: Record<string, unknown> = {
         name:        nome.trim(),
         tag:         tag.trim().toUpperCase(),
@@ -186,11 +191,13 @@ function CriarTimeForm() {
 
       if (teamError) throw new Error(teamError.message);
 
-      // Adiciona capitão como player
+      // FIX: capitão inserido com puuid e riot_account_id corretamente
       const captainInsert = {
         team_id:        team.id,
         summoner_name:  account.game_name,
         tag_line:       account.tag_line,
+        puuid:          account.puuid,
+        riot_account_id: account.id,
         tier:           "UNRANKED",
         rank:           "",
         lp:             0,
@@ -204,17 +211,33 @@ function CriarTimeForm() {
 
       // Adiciona jogadores buscados
       if (players.length > 0) {
-        const playersToInsert = players.map(p => ({
-          team_id:      team.id,
-          summoner_name: p.gameName,
-          tag_line:     p.tagLine,
-          puuid:        p.puuid,
-          role:         p.role,
-          tier:         p.tier ?? "UNRANKED",
-          rank:         p.rank ?? "",
-          lp:           p.lp ?? 0,
-          profile_icon: p.profileIconId,
-        }));
+        // FIX: para cada jogador, verifica se já existe riot_account pelo puuid
+        // para preencher riot_account_id corretamente
+        const playersToInsert = await Promise.all(
+          players.map(async (p) => {
+            const { data: existingAccount } = await supabase
+              .from("riot_accounts")
+              .select("id")
+              .eq("puuid", p.puuid)
+              .maybeSingle();
+
+            return {
+              team_id:         team.id,
+              summoner_name:   p.gameName,
+              tag_line:        p.tagLine,
+              puuid:           p.puuid,
+              riot_account_id: existingAccount?.id ?? null,
+              role:            p.role,
+              tier:            p.tier ?? "UNRANKED",
+              rank:            p.rank ?? "",
+              lp:              p.lp ?? 0,
+              wins:            p.wins ?? 0,
+              losses:          p.losses ?? 0,
+              profile_icon:    p.profileIconId,
+            };
+          })
+        );
+
         const { error: playersError } = await supabase.from("players").insert(playersToInsert);
         if (playersError) console.warn("Aviso ao inserir jogadores:", playersError.message);
       }

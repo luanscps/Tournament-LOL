@@ -1,124 +1,131 @@
 # Fluxos Principais — GerenciadorDeTorneios BRLOL
 
-> Atualizado em: **2026-04-26**
-
-Este documento descreve os fluxos completos de cada ação relevante do sistema, do clique do usuário até o banco.
+> Este documento descreve os fluxos **funcionais** principais (do ponto de vista do usuário/organizador).  
+> Detalhes de tabelas, colunas, RLS ou integrações com a Riot API estão documentados em `docs/BRLOL-DOCS-UNIFICADO.md`.
 
 ---
 
-## 1. Criar Torneio (Organizador)
+## 1. Criar torneio (organizador/admin)
 
-```
+```text
 Usuário (organizador/admin)
-  └─ acessa /organizador/torneios/novo
-      └─ preenche formulário (name, description, max_teams, bracket_type, start_date, end_date, etc.)
-          └─ submit → lib/actions/tournament.ts → createTournament()
-              ├─ valida com zod
-              ├─ checa requireAdmin() ou permissão de organizador
-              ├─ INSERT em tournaments (usa start_date/end_date — NÃO starts_at/ends_at)
-              └─ router.push("/torneios/{torneio.id}/inscricoes")
+  └─ acessa página de criação de torneio
+      └─ preenche formulário (nome, descrição, máximo de times, tipo de chave, datas, etc.)
+          └─ envia formulário
+              ├─ valida campos obrigatórios e permissões (admin/organizador)
+              ├─ cria o registro de torneio no banco
+              └─ redireciona para a tela de inscrições daquele torneio
 ```
 
-**Resultado:** Torneio criado, usuário é levado diretamente para a tela de inscrições daquele torneio.
+Ponto importante de domínio (datas, status, etc.) → ver seção "tournaments" e fluxos de ciclo de vida em `BRLOL-DOCS-UNIFICADO.md`.
 
 ---
 
-## 2. Editar Torneio (Organizador)
+## 2. Inscrever time em torneio (usuário)
 
-```
-Usuário
-  └─ acessa /organizador/torneios/[id]
-      └─ useEffect carrega torneio via .eq("id", id)
-          ├─ preenche campos com start_date / end_date (NÃO starts_at/ends_at)
-          └─ submit → handleSave()
-              └─ UPDATE tournaments SET { name, description, start_date, end_date, ... }
-                  (NUNCA inclui starts_at/ends_at no payload)
-```
-
-> ⚠️ `starts_at` e `ends_at` são colunas GENERATED. Se incluídas no UPDATE, causam erro:  
-> `column "starts_at" can only be updated to DEFAULT`
-
----
-
-## 3. Inscrever Time em Torneio (Usuário)
-
-```
-Usuário
+```text
+Usuário logado
   └─ acessa página pública do torneio (/torneios/[slug])
       └─ clica em "+ Inscrever meu time"
-          └─ redireciona para /dashboard/times/criar?tournament={tournamentId}
-              └─ preenche dados do time (name, tag, logo_url)
-                  └─ INSERT em teams (com tournament_id = tournamentId)
-                      └─ INSERT em inscricoes (tournament_id, team_id, status = 'pending')
-                          └─ router.push("/torneios/{tournamentId}?inscrito=true")
+          └─ é levado para tela de criação/seleção de time na dashboard
+              └─ escolhe um time existente ou cadastra um novo
+                  └─ confirma inscrição
+                      └─ volta para página do torneio com estado "inscrição enviada"
 ```
 
-> ⚠️ O link deve usar `/dashboard/times/criar` (plural). O singular `/dashboard/time/criar` retorna 404.
+O relacionamento entre times, inscrições e torneios (tabelas e colunas) está descrito em "Modelo de dados — teams/inscricoes" no documento unificado.
 
 ---
 
-## 4. Aprovar / Rejeitar Inscrição (Organizador/Admin)
+## 3. Aprovar/rejeitar inscrição (organizador/admin)
 
-```
+```text
 Organizador
-  └─ acessa /organizador/torneios/[id]/inscricoes
-      └─ lista inscricoes WHERE tournament_id = id
-          └─ clica em Aprovar ou Rejeitar
-              └─ lib/actions/inscricao.ts → aprovarInscricao(id) / rejeitarInscricao(id)
-                  ├─ UPDATE inscricoes SET status = 'approved' | 'rejected'
-                  ├─ INSERT em notifications (para o capitão do time)
-                  └─ revalidatePath("/organizador/torneios/[id]/inscricoes")
+  └─ acessa tela de inscrições do torneio
+      └─ visualiza lista de inscrições pendentes/aprovadas/rejeitadas
+          └─ clica em "Aprovar" ou "Rejeitar" para cada time
+              └─ o status da inscrição é atualizado
+                  └─ o capitão recebe notificação in-app e/ou externa (e-mail/Discord)
 ```
+
+Regras de quem pode aprovar ou rejeitar e como isso reflete em notificações estão detalhadas nas seções de RLS e notificações do documento de arquitetura.
 
 ---
 
-## 5. Registrar Conta Riot (Usuário)
+## 4. Registrar conta Riot (jogador)
 
+```text
+Jogador
+  └─ acessa tela de registro de conta Riot na dashboard
+      └─ informa Riot ID (Nome#TAG)
+          └─ sistema valida a conta via Riot API
+              └─ jogador confirma vinculação
+                  └─ perfil passa a exibir dados de elo, maestria e histórico
 ```
-Usuário
-  └─ acessa /dashboard/jogador/registrar
-      └─ informa game_name + tagline
-          └─ Edge Function riot-api-sync valida o PUUID via Riot API
-              └─ INSERT em riot_accounts (profile_id, puuid, game_name, tagline, is_primary)
-                  └─ Job agendado cria rank_snapshots e champion_masteries periodicamente
-```
+
+Os detalhes de validação, endpoints da Riot API e tabelas persistidas (`riot_accounts`, `rank_snapshots`, `champion_masteries`) estão em "Riot Games API — Visão unificada" e "Modelo de dados" no documento unificado.
 
 ---
 
-## 6. Gerar Chaveamento (Admin)
+## 5. Gerar chaveamento (admin)
 
-```
+```text
 Admin
-  └─ acessa /admin/torneios/[slug]
-      └─ clica em "Gerar Chaveamento"
-          └─ POST para Edge Function bracket-generator
-              ├─ lê inscricoes aprovadas do torneio
-              ├─ embaralha/ordena por seed
-              ├─ INSERT em tournament_stages (ex.: "Playoffs")
-              └─ INSERT em matches (team_a_id, team_b_id, round, match_number)
+  └─ acessa tela administrativa do torneio
+      └─ verifica times com inscrição aprovada
+          └─ clica em "Gerar chaveamento"
+              └─ sistema monta a chave conforme o tipo (single, double, round robin, swiss)
+                  └─ partidas são criadas automaticamente
+                      └─ tela do torneio passa a exibir o bracket
 ```
+
+Lógica de seedings, distribuição de partidas por fase e estrutura de tabelas de partidas está descrita nas seções de torneios/partidas em `BRLOL-DOCS-UNIFICADO.md`.
 
 ---
 
-## 7. Registrar Resultado de Partida (Admin)
+## 6. Registrar resultado de partida (admin)
 
-```
+```text
 Admin
-  └─ acessa /admin/torneios/[slug] → seção de partidas
-      └─ preenche score_a, score_b, winner_team_id
-          └─ lib/actions/partida.ts → editarResultadoPartida()
-              ├─ UPDATE matches SET { score_a, score_b, winner_team_id, status: 'finished' }
-              ├─ INSERT em match_games (se BO3/BO5, um registro por jogo)
-              └─ revalidatePath()
+  └─ acessa seção de partidas do torneio
+      └─ escolhe uma partida pendente
+          └─ preenche placar (score_a, score_b) e vencedor
+              └─ opcionalmente registra picks/bans e detalhes de jogos (BO1/BO3/BO5)
+                  └─ confirma salvamento
+                      └─ standings, estatísticas de jogadores e bracket são atualizados
 ```
+
+A forma exata como resultados alimentam standings, views de leaderboard e estatísticas em `player_stats` está documentada no arquivo de arquitetura unificado.
 
 ---
 
-## 8. Notificações em Tempo Real
+## 7. Notificações em tempo real
 
+```text
+Sistema
+  └─ gera notificações quando eventos importantes acontecem
+      ├─ inscrição aprovada/rejeitada
+      ├─ partida agendada ou atualizada
+      ├─ mudança de status de torneio
+      └─ outros eventos de sistema
+
+Usuário logado
+  └─ vê badge de notificações na Navbar
+      └─ abre dropdown para visualizar últimas notificações
+          └─ ao interagir, marca como lidas e navega para a tela relacionada
 ```
-Supabase Realtime
-  └─ subscription em notifications WHERE user_id = session.user.id
-      └─ ao INSERT de nova notificação → componente NotificationBell atualiza badge
-          └─ usuário clica → marca as notificações como read = true
+
+O schema de notificações, política de RLS e configuração de Realtime estão descritos no documento unificado e nas migrations.
+
+---
+
+## 8. Monitoramento da Riot API (cron)
+
+```text
+Cron job (Vercel)
+  └─ chama rota de monitoramento periodicamente
+      └─ consulta status da Riot API (manutenções/incidentes)
+          └─ se houver problemas, envia alerta para canal Discord configurado
 ```
+
+Configuração detalhada do cron, rota `/api/cron/check-riot-status` e variáveis de ambiente estão em `docs/api/cron-monitoramento.md` e na seção de Edge Functions do documento unificado.

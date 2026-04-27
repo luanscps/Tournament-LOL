@@ -1,45 +1,7 @@
 # Supabase — Banco de Dados e Autenticação
 
-## Tabelas necessárias
-
-### `profiles` (já existente)
-
-Extensão da tabela `auth.users` do Supabase. Contém o campo `role` usado para controle de acesso.
-
-```sql
-CREATE TABLE profiles (
-  id UUID REFERENCES auth.users(id) PRIMARY KEY,
-  role TEXT DEFAULT 'user',  -- 'user' | 'admin'
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### `tournament_match_results` (nova — criação manual necessária)
-
-Criada para receber os resultados de partidas via webhook da Riot.
-
-```sql
-CREATE TABLE tournament_match_results (
-  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  tournament_code TEXT UNIQUE NOT NULL,
-  game_id         BIGINT,
-  game_data       JSONB NOT NULL,
-  processed       BOOLEAN DEFAULT FALSE,
-  received_at     TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Índice para consultas por status
-CREATE INDEX idx_match_results_processed
-  ON tournament_match_results (processed)
-  WHERE processed = FALSE;
-
--- RLS: somente service_role pode inserir
-ALTER TABLE tournament_match_results ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Service role full access"
-  ON tournament_match_results
-  USING (auth.role() = 'service_role');
-```
+> Esta página descreve apenas os **clientes** Supabase usados na API e como o serviço é configurado.  
+> O modelo de dados completo (tabelas, enums, relacionamentos, RLS) está documentado em `docs/BRLOL-DOCS-UNIFICADO.md` na seção "Modelo de dados — schema público Supabase".
 
 ---
 
@@ -48,10 +10,25 @@ CREATE POLICY "Service role full access"
 | Contexto | Função | Bypassa RLS? |
 |---|---|---|
 | Browser | `createBrowserClient()` | ❌ Não |
-| Server (route handlers) | `createServerClient()` com cookies | ❌ Não |
-| Webhook / Admin | `createClient(url, serviceRoleKey)` | ✅ Sim |
+| Server (Route Handlers) | `createServerClient()` com cookies | ❌ Não |
+| Webhook / Admin / Jobs | `createClient(url, serviceRoleKey)` | ✅ Sim |
 
-> ⚠️ A `SUPABASE_SERVICE_ROLE_KEY` bypassa todas as políticas de RLS. Use somente em contextos servidor-para-servidor. Nunca prefixe com `NEXT_PUBLIC_`.
+> ⚠️ `SUPABASE_SERVICE_ROLE_KEY` bypassa todas as políticas de RLS. Use somente em contextos servidor‑para‑servidor (webhooks, crons, edge functions). Nunca prefixe com `NEXT_PUBLIC_`.
+
+### Padrão de uso em rotas da API (server-side)
+
+```typescript
+import { createServerClient } from "@supabase/auth-helpers-nextjs";
+
+export async function GET(req: NextRequest) {
+  const supabase = createServerClient({
+    cookies: () => req.cookies,
+  });
+
+  const { data: { user } } = await supabase.auth.getUser();
+  // ... usar user.id para consultar profiles, tournaments, etc.
+}
+```
 
 ---
 
@@ -62,3 +39,20 @@ CREATE POLICY "Service role full access"
 | `NEXT_PUBLIC_SUPABASE_URL` | Client + Server | ✅ Sim |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client + Server | ✅ Sim (sujeita ao RLS) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server apenas | ❌ Nunca no cliente |
+
+Exemplo de configuração `.env.local` para desenvolvimento:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+```
+
+---
+
+## Webhook de resultados de torneio (Riot → Supabase)
+
+A rota `/app/api/riot/tournament/callback` recebe eventos da Riot após o término de partidas de torneio.
+Ela usa o client com `SERVICE_ROLE_KEY` para inserir/atualizar registros em tabelas internas.
+
+> O schema detalhado das tabelas envolvidas (ex.: `matches`, `match_games`, `player_stats`, `audit_log`) está descrito no documento unificado de arquitetura.

@@ -1,4 +1,6 @@
-# Visão Geral da Arquitetura
+# Visão Geral da Arquitetura da API
+
+> Para visão de arquitetura completa (frontend + backend + banco Supabase + Riot + Edge Functions), consulte primeiro `docs/BRLOL-DOCS-UNIFICADO.md` e depois volte aqui para detalhes específicos da camada de API.
 
 ## Stack tecnológico
 
@@ -21,31 +23,31 @@ GerenciadorDeTorneios-BRLOL/
 │
 ├── app/
 │   └── api/
-│       ├── admin/              ← Rotas administrativas
+│       ├── admin/              ← Rotas administrativas internas
 │       ├── auth/               ← Autenticação Supabase
 │       ├── jogadores/          ← CRUD de jogadores
-│       ├── player/             ← Perfil de jogador
-│       ├── profile/            ← Dados de perfil
+│       ├── player/             ← Perfil detalhado de jogador
+│       ├── profile/            ← Dados de perfil do usuário logado
 │       └── riot/
 │           ├── match/          ← Detalhes de partida
 │           ├── matches/        ← Histórico de partidas
-│           ├── summoner/       ← Dados do invocador
+│           ├── summoner/       ← Dados agregados do invocador
 │           └── tournament/
-│               ├── route.ts        ← Setup de torneio
+│               ├── route.ts        ← Setup de torneio (stub/produção)
 │               ├── codes/          ← Tournament codes
 │               ├── events/         ← Lobby events (polling)
 │               └── callback/       ← Webhook Riot → Supabase
 │
 ├── lib/
 │   ├── riot.ts                 ← Cliente geral da Riot API
-│   ├── riot-rate-limiter.ts    ← Rate limiting 3 camadas
-│   ├── riot-tournament.ts      ← Cliente tournament-stub-v5
+│   ├── riot-rate-limiter.ts    ← Rate limiting multi‑camada
+│   ├── riot-tournament.ts      ← Cliente tournament(-stub)-v5
 │   ├── riot-cache.ts           ← Cache TTL em memória
-│   ├── rate-limit.ts           ← Rate limit por IP (clientes)
-│   └── supabase/               ← Clientes Supabase (server/client)
+│   ├── rate-limit.ts           ← Rate limit por IP (para rotas públicas)
+│   └── supabase/               ← Clientes Supabase (server/client/service)
 │
 ├── app/api/cron/
-│   └── check-riot-status/      ← Monitor semanal
+│   └── check-riot-status/      ← Monitor periódico de status da Riot API
 │
 ├── vercel.json                 ← Configuração de crons
 └── docs/api/                   ← Esta documentação
@@ -53,33 +55,37 @@ GerenciadorDeTorneios-BRLOL/
 
 ---
 
-## Fluxo de autenticação e autorização
+## Autenticação e autorização na API
 
-Todas as rotas que alteram dados (POST, PUT) verificam se o usuário tem `role = "admin"` na tabela `profiles` do Supabase. O padrão de verificação usado é:
+Todas as rotas que alteram dados de torneios (POST, PUT, DELETE) conferem se o usuário logado é admin via Supabase (`profiles.is_admin = true`). A camada de RLS no banco reforça as mesmas regras.
+
+Exemplo de padrão de verificação (pseudocódigo simplificado):
 
 ```typescript
-async function isAdmin(): Promise<boolean> {
+async function requireAdmin() {
   const supabase = createServerClient(...);
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return false;
-  const { data } = await supabase
+  if (!user) throw new Error("Unauthorized");
+
+  const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("is_admin")
     .eq("id", user.id)
     .single();
-  return data?.role === "admin";
+
+  if (!profile?.is_admin) throw new Error("Forbidden");
 }
 ```
 
-Rotas públicas (GET sem autenticação): consulta de summoner, matches, status de torneio.  
-Rotas protegidas (requer `admin`): criar torneio, gerar codes, configurar provider.
+- **Rotas públicas**: consulta de summoner, histórico de partidas, status de torneio.
+- **Rotas protegidas (admin)**: criação/edição de torneios, seedings, geração de tournament codes, gerenciamento de partidas.
 
 ---
 
 ## Ciclo de vida de um deploy
 
-1. Push para `main` → Vercel detecta automaticamente
-2. Vercel executa `next build`
-3. Deploy em edge CDN global
-4. Variáveis de ambiente injetadas no servidor (nunca no cliente)
-5. Cron jobs ativados conforme `vercel.json`
+1. Push para `main` → Vercel detecta e dispara build.
+2. Vercel executa `next build` com as variáveis de ambiente configuradas.
+3. Deploy em edge CDN global.
+4. Rotas de API passam a rodar com o novo código (Serverless/Edge Functions da Vercel).
+5. Crons são (re)agendados conforme `vercel.json`.
