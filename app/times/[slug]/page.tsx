@@ -110,7 +110,6 @@ function StatPill({
   );
 }
 
-// ── UUID v4 regex — FIX 1: regex correta, exige formato xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx ──
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // ── Main Page ──────────────────────────────────────────────────────────────
@@ -122,7 +121,6 @@ export default async function TimeDetailPage({
   const { slug } = await params;
   const admin = createAdminClient();
 
-  // FIX 1: UUID regex estrita (não aceita apenas 36 chars com hífens)
   const isUUID = UUID_REGEX.test(slug);
   const { data: team } = isUUID
     ? await admin.from("teams").select("*").eq("id", slug).single()
@@ -130,39 +128,32 @@ export default async function TimeDetailPage({
 
   if (!team) notFound();
 
-  // ── FIX 2: busca roster via team_members → profiles → riot_accounts ───
-  // A tabela correta é team_members (relação profile_id → riot_accounts)
-  // e não players.eq("team_id") que estava errada e retornava vazio.
+  // ── FIX PRINCIPAL: busca roster via tabela `players` (onde o formulário insere)
+  // Antes estava lendo `team_members` que é uma tabela diferente e ficava vazia.
   const { data: members } = await admin
-    .from("team_members")
+    .from("players")
     .select(`
       id,
       role,
-      profile:profiles!team_members_profile_id_fkey(
-        id,
-        riot_accounts!riot_accounts_profile_id_fkey(
-          puuid,
-          game_name,
-          tag_line,
-          profile_icon_id,
-          tier,
-          rank,
-          lp,
-          wins,
-          losses,
-          summoner_level
-        )
-      )
+      summoner_name,
+      tag_line,
+      profile_icon,
+      tier,
+      rank,
+      lp,
+      wins,
+      losses,
+      summoner_level
     `)
     .eq("team_id", team.id);
 
-  // Normaliza a estrutura para facilitar o render
+  // Normaliza para o formato do render
   type PlayerRow = {
     id: string;
     role: string | null;
     summoner_name: string;
-    tag_line: string;          // FIX 3: vem de riot_accounts.tag_line (sem undefined)
-    profile_icon_id: number | null; // FIX 3: nome correto da coluna
+    tag_line: string;
+    profile_icon_id: number | null;
     tier: string | null;
     rank: string | null;
     lp: number | null;
@@ -171,25 +162,21 @@ export default async function TimeDetailPage({
     summoner_level: number | null;
   };
 
-  const players: PlayerRow[] = (members ?? [])
-    .map((m: any) => {
-      const ra = m.profile?.riot_accounts?.[0] ?? null;
-      return {
-        id:               m.id,
-        role:             m.role ?? null,
-        summoner_name:    ra?.game_name ?? "—",
-        // FIX 4: tag_line normalizado — remove "#" se existir, trata undefined/null
-        tag_line:         ra?.tag_line ? String(ra.tag_line).replace(/^#/, "") : "",
-        profile_icon_id:  ra?.profile_icon_id ?? null,   // FIX 3: coluna correta
-        tier:             ra?.tier ?? null,
-        rank:             ra?.rank ?? null,
-        lp:               ra?.lp ?? null,
-        wins:             ra?.wins ?? null,
-        losses:           ra?.losses ?? null,
-        summoner_level:   ra?.summoner_level ?? null,
-      };
-    })
-    .filter((p: PlayerRow) => p.summoner_name !== "—"); // remove membros sem conta Riot
+  const players: PlayerRow[] = (members ?? []).map((m: any) => ({
+    id:              m.id,
+    role:            m.role ?? null,
+    summoner_name:   m.summoner_name ?? "—",
+    // tag_line: remove "#" inicial se houver, trata null/undefined
+    tag_line:        m.tag_line ? String(m.tag_line).replace(/^#/, "") : "",
+    // ATENÇÃO: coluna na tabela `players` chama-se `profile_icon` (sem _id)
+    profile_icon_id: m.profile_icon ?? null,
+    tier:            m.tier ?? null,
+    rank:            m.rank ?? null,
+    lp:              m.lp ?? null,
+    wins:            m.wins ?? null,
+    losses:          m.losses ?? null,
+    summoner_level:  m.summoner_level ?? null,
+  }));
 
   const sortedPlayers = players.sort(
     (a, b) => (ROLE_ORDER[a.role ?? ""] ?? 99) - (ROLE_ORDER[b.role ?? ""] ?? 99),
@@ -250,7 +237,7 @@ export default async function TimeDetailPage({
     .filter(Boolean)
     .filter((t: any) => ["OPEN", "IN_PROGRESS", "CHECKIN"].includes(t.status));
 
-  // Média de tier para "força do time"
+  // Média de tier
   const tierOrder: Record<string, number> = {
     CHALLENGER: 10, GRANDMASTER: 9, MASTER: 8,
     DIAMOND: 7, EMERALD: 6, PLATINUM: 5, GOLD: 4,
@@ -266,7 +253,6 @@ export default async function TimeDetailPage({
       : -1;
   const avgTierName = Object.entries(tierOrder).find(([, v]) => v === avgTierIdx)?.[0] ?? null;
 
-  // FIX 5: tabs como array para usar CSS class hover em vez de onMouseOver/Out inline
   const NAV_TABS = [
     { label: "👥 Roster",   href: "#roster"   },
     { label: "⚔️ Partidas", href: "#partidas" },
@@ -501,8 +487,7 @@ export default async function TimeDetailPage({
             </div>
           )}
 
-          {/* ── FIX 5: Abas de navegação sem onMouseOver/Out inline ── */}
-          {/* hover gerenciado por CSS class group/hover do Tailwind    */}
+          {/* ── Abas de navegação ── */}
           <div
             className="flex gap-0 mt-8 border-b"
             style={{ borderColor: "rgba(30,58,95,0.7)" }}
@@ -624,7 +609,7 @@ export default async function TimeDetailPage({
                       </span>
                     </div>
 
-                    {/* FIX 3: profile_icon_id — coluna correta de riot_accounts */}
+                    {/* Avatar — profile_icon_id vem de m.profile_icon na tabela players */}
                     <PlayerAvatar iconId={p.profile_icon_id} name={p.summoner_name} size={44} />
 
                     {/* Info do summoner */}
@@ -634,7 +619,6 @@ export default async function TimeDetailPage({
                         style={{ color: "#fff" }}
                       >
                         {p.summoner_name}
-                        {/* FIX 4: tag_line normalizado — só renderiza se não for string vazia */}
                         {p.tag_line && (
                           <span className="text-gray-600 font-normal text-xs">#{p.tag_line}</span>
                         )}
