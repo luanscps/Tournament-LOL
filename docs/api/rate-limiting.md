@@ -1,5 +1,10 @@
 # Sistema de Rate Limiting
 
+> Este arquivo descreve apenas o **rate limiting na camada de integração com a Riot e com os clientes**.  
+> Para entender como os limites se encaixam no fluxo geral (chamadas batendo no banco Supabase, Edge Functions, cron jobs), consulte também `docs/BRLOL-DOCS-UNIFICADO.md` (seções de Riot API, Edge Functions e fluxos de negócio).
+
+---
+
 ## Por que rate limiting é crítico
 
 A Riot Games pode **banir permanentemente** a API Key caso os limites sejam excedidos de forma sistemática. O sistema do BRLOL possui **duas camadas independentes** de proteção:
