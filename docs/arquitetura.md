@@ -1,6 +1,5 @@
-# Arquitetura — GerenciadorDeTorneios BRLOL
+# ARQUITETURA (stub)
 
-> ⚠️ **DEPRECADO** — Este arquivo foi substituído por [`ARQUITETURA-ATUAL.md`](./ARQUITETURA-ATUAL.md).
-> Mantido apenas por histórico. Não usar como referência.
-
-Última versão real: 2026-04-23 (pós migration 012).
+> Use [`BRLOL-DOCS-UNIFICADO.md`](./BRLOL-DOCS-UNIFICADO.md) como documento principal de arquitetura do projeto.
+>
+> Este arquivo existe para manter compatibilidade com links antigos que apontavam para `docs/arquitetura.md`.
