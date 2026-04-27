@@ -1,5 +1,15 @@
 # Riot Games API — Conceitos e Integração
 
+> Para visão de alto nível dos **fluxos de uso da Riot API no BRLOL** (como os dados entram no banco Supabase, como alimentam players/matches/stats e como se relacionam com Edge Functions), consulte primeiro `docs/BRLOL-DOCS-UNIFICADO.md` nas seções:
+>
+> - "Riot Games API — Visão unificada"
+> - "riot_accounts, rank_snapshots, champion_masteries"
+> - "Fluxos principais de negócio"
+>
+> Este arquivo em `docs/api/riot-api.md` aprofunda **detalhes de endpoints, URLs, assets e exemplos de uso no código** (camada de integração e helpers de front/backend).
+
+---
+
 ## Como a Riot API funciona
 
 A Riot Games API é uma REST API autenticada por chave (`X-Riot-Token`). Ela opera em dois níveis de roteamento:
