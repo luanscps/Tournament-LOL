@@ -3,7 +3,6 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// FIX: adicionado puuid à interface
 interface RiotAccount {
   id: string;
   puuid: string;
@@ -23,7 +22,9 @@ interface PlayerSlot {
   wins: number;
   losses: number;
   profileIconId: number | null;
-  role: "TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT";
+  summonerLevel: number | null;
+  lane: "TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT";
+  existingRiotAccountId: string | null;
 }
 
 const ROLES: Array<"TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT"> = [
@@ -34,8 +35,12 @@ const ROLE_LABELS: Record<string, string> = {
   TOP: "Top", JUNGLE: "Jungle", MID: "Mid", ADC: "ADC", SUPPORT: "Suporte",
 };
 
-const ROLE_ICONS: Record<string, string> = {
-  TOP: "🛡️", JUNGLE: "🌿", MID: "⚡", ADC: "🏹", SUPPORT: "💊",
+const ROLE_ICON_URL: Record<string, string> = {
+  TOP:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
+  JUNGLE:  "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-jungle.svg",
+  MID:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-middle.svg",
+  ADC:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-bottom.svg",
+  SUPPORT: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-utility.svg",
 };
 
 const TIER_COLORS: Record<string, string> = {
@@ -63,14 +68,15 @@ function CriarTimeForm() {
   const [logoUrl, setLogoUrl]     = useState("");
   const [players, setPlayers]     = useState<PlayerSlot[]>([]);
   const [searchQuery, setSearch]  = useState("");
-  const [searchResult, setResult] = useState<Omit<PlayerSlot, "role"> | null>(null);
+  const [searchResult, setResult] = useState<Omit<PlayerSlot, "lane" | "existingRiotAccountId"> | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [addRole, setAddRole]     = useState<"TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT">("TOP");
+  const [addLane, setAddLane]     = useState<"TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT">("TOP");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
   const [checking, setChecking]   = useState(true);
   const [account, setAccount]     = useState<RiotAccount | null>(null);
+  const [captainLane, setCaptainLane] = useState<"TOP" | "JUNGLE" | "MID" | "ADC" | "SUPPORT">("TOP");
 
   const router       = useRouter();
   const searchParams = useSearchParams();
@@ -82,7 +88,6 @@ function CriarTimeForm() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      // FIX: busca puuid junto com os outros campos
       const { data: acct } = await supabase
         .from("riot_accounts")
         .select("id, puuid, game_name, tag_line, summoner_level, profile_icon_id")
@@ -117,7 +122,27 @@ function CriarTimeForm() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Jogador não encontrado");
-      setResult(data);
+
+      // Verifica se o jogador tem conta cadastrada no sistema
+      const { data: existingAcct } = await supabase
+        .from("riot_accounts")
+        .select("id")
+        .eq("puuid", data.puuid)
+        .maybeSingle();
+
+      setResult({
+        puuid:         data.puuid,
+        gameName:      data.gameName,
+        tagLine:       data.tagLine,
+        tier:          data.tier ?? "UNRANKED",
+        rank:          data.rank ?? "",
+        lp:            data.lp ?? 0,
+        wins:          data.wins ?? 0,
+        losses:        data.losses ?? 0,
+        profileIconId: data.profileIconId ?? null,
+        summonerLevel: data.summonerLevel ?? null,
+        existingRiotAccountId: existingAcct?.id ?? null,
+      } as any);
     } catch (e: any) {
       setSearchError(e.message);
     } finally {
@@ -131,15 +156,23 @@ function CriarTimeForm() {
       setSearchError("Este jogador já foi adicionado.");
       return;
     }
-    if (players.filter(p => p.role === addRole).length > 0) {
-      setSearchError(`A role ${ROLE_LABELS[addRole]} já está preenchida.`);
+    const takenLanes = new Set([...players.map(p => p.lane), captainLane]);
+    if (takenLanes.has(addLane)) {
+      setSearchError(`A lane ${ROLE_LABELS[addLane]} já está preenchida.`);
       return;
     }
-    if (players.length >= 5) {
-      setSearchError("O time já tem 5 jogadores.");
+    if (players.length >= 4) {
+      setSearchError("O time já tem os 4 jogadores adicionais (você é o capitão, 5/5).");
       return;
     }
-    setPlayers(prev => [...prev, { ...searchResult, role: addRole }]);
+    setPlayers(prev => [
+      ...prev,
+      {
+        ...searchResult,
+        lane: addLane,
+        existingRiotAccountId: (searchResult as any).existingRiotAccountId ?? null,
+      } as PlayerSlot,
+    ]);
     setResult(null);
     setSearch("");
     setSearchError("");
@@ -162,7 +195,6 @@ function CriarTimeForm() {
 
       const slug = generateSlug(nome.trim());
 
-      // Verifica se já existe time com esse slug
       const { data: existing } = await supabase
         .from("teams")
         .select("id")
@@ -171,7 +203,7 @@ function CriarTimeForm() {
 
       const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
-      // Cria o time (tournament_id é opcional)
+      // 1. Cria o time
       const insertPayload: Record<string, unknown> = {
         name:        nome.trim(),
         tag:         tag.trim().toUpperCase(),
@@ -191,58 +223,59 @@ function CriarTimeForm() {
 
       if (teamError) throw new Error(teamError.message);
 
-      // FIX: capitão inserido com puuid e riot_account_id corretamente
-      const captainInsert = {
-        team_id:        team.id,
-        summoner_name:  account.game_name,
-        tag_line:       account.tag_line,
-        puuid:          account.puuid,
-        riot_account_id: account.id,
-        tier:           "UNRANKED",
-        rank:           "",
-        lp:             0,
-        wins:           0,
-        losses:         0,
-        role:           players.length > 0 ? null : "TOP",
-        profile_icon:   account.profile_icon_id,
-        summoner_level: account.summoner_level,
-      };
-      await supabase.from("players").insert(captainInsert);
+      // 2. Insere capitão em team_members (status accepted, team_role captain)
+      const { error: captainError } = await supabase
+        .from("team_members")
+        .insert({
+          team_id:         team.id,
+          profile_id:      user.id,
+          riot_account_id: account.id,
+          team_role:       "captain",
+          status:          "accepted",
+          lane:            captainLane,
+          invited_by:      user.id,
+        });
 
-      // Adiciona jogadores buscados
+      if (captainError) throw new Error("Erro ao inserir capitão: " + captainError.message);
+
+      // 3. Busca profile_id de cada jogador adicionado pelo puuid da conta Riot
+      //    e insere em team_members (status accepted, team_role member)
       if (players.length > 0) {
-        // FIX: para cada jogador, verifica se já existe riot_account pelo puuid
-        // para preencher riot_account_id corretamente
-        const playersToInsert = await Promise.all(
+        const membersToInsert = await Promise.all(
           players.map(async (p) => {
-            const { data: existingAccount } = await supabase
-              .from("riot_accounts")
-              .select("id")
-              .eq("puuid", p.puuid)
-              .maybeSingle();
+            // Tenta encontrar o profile do jogador pelo riot_account
+            let profileId: string | null = null;
+            if (p.existingRiotAccountId) {
+              const { data: ra } = await supabase
+                .from("riot_accounts")
+                .select("profile_id")
+                .eq("id", p.existingRiotAccountId)
+                .maybeSingle();
+              profileId = ra?.profile_id ?? null;
+            }
 
             return {
               team_id:         team.id,
-              summoner_name:   p.gameName,
-              tag_line:        p.tagLine,
-              puuid:           p.puuid,
-              riot_account_id: existingAccount?.id ?? null,
-              role:            p.role,
-              tier:            p.tier ?? "UNRANKED",
-              rank:            p.rank ?? "",
-              lp:              p.lp ?? 0,
-              wins:            p.wins ?? 0,
-              losses:          p.losses ?? 0,
-              profile_icon:    p.profileIconId,
+              // Se não encontrou perfil no sistema, usa o do capitão como fallback
+              // Isso é um placeholder até o jogador aceitar convite
+              profile_id:      profileId ?? user.id,
+              riot_account_id: p.existingRiotAccountId ?? null,
+              team_role:       "member",
+              status:          profileId ? "accepted" : "pending",
+              lane:            p.lane,
+              invited_by:      user.id,
             };
           })
         );
 
-        const { error: playersError } = await supabase.from("players").insert(playersToInsert);
-        if (playersError) console.warn("Aviso ao inserir jogadores:", playersError.message);
+        const { error: membersError } = await supabase
+          .from("team_members")
+          .insert(membersToInsert);
+
+        if (membersError) console.warn("Aviso team_members:", membersError.message);
       }
 
-      // Se tem torneio, inscreve o time
+      // 4. Se tem torneio, inscreve o time
       if (tournamentId) {
         await supabase.from("inscricoes").insert({
           tournament_id: tournamentId,
@@ -285,7 +318,7 @@ function CriarTimeForm() {
     );
   }
 
-  const takenRoles = new Set(players.map(p => p.role));
+  const takenLanes = new Set([...players.map(p => p.lane), captainLane]);
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -299,30 +332,57 @@ function CriarTimeForm() {
         </p>
       </div>
 
-      {/* Banner de torneio (opcional) */}
       {tournamentId && (
         <div className="bg-[#C8A84B]/10 border border-[#C8A84B]/30 rounded-lg p-3">
           <p className="text-[#C8A84B] text-sm">🏆 Inscrição no torneio será feita ao criar.</p>
         </div>
       )}
 
-      {/* Conta vinculada */}
-      <div className="card-lol flex items-center gap-3">
-        {account.profile_icon_id ? (
-          <img
-            src={`https://ddragon.leagueoflegends.com/cdn/${DDRAGON}/img/profileicon/${account.profile_icon_id}.png`}
-            alt="ícone" width={40} height={40}
-            className="rounded-full border border-[#1E3A5F]"
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-[#0A1428] border border-[#1E3A5F] flex items-center justify-center">👤</div>
-        )}
+      {/* Conta vinculada — Capitão */}
+      <div className="card-lol space-y-3">
+        <p className="text-[#C8A84B] font-semibold text-xs uppercase tracking-widest">Capitão (você)</p>
+        <div className="flex items-center gap-3">
+          {account.profile_icon_id ? (
+            <img
+              src={`https://ddragon.leagueoflegends.com/cdn/${DDRAGON}/img/profileicon/${account.profile_icon_id}.png`}
+              alt="ícone" width={40} height={40}
+              className="rounded-full border border-[#1E3A5F]"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-[#0A1428] border border-[#1E3A5F] flex items-center justify-center">👤</div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-medium text-sm">
+              {account.game_name}
+              <span className="text-gray-500">#{account.tag_line}</span>
+            </p>
+            <p className="text-gray-500 text-xs">Nível {account.summoner_level} · Capitão ✅</p>
+          </div>
+        </div>
+        {/* Lane do capitão */}
         <div>
-          <p className="text-white font-medium text-sm">
-            {account.game_name}
-            <span className="text-gray-500">#{account.tag_line}</span>
-          </p>
-          <p className="text-gray-500 text-xs">Nível {account.summoner_level} · Capitão do time ✅</p>
+          <p className="text-gray-500 text-xs mb-2">Sua lane no time:</p>
+          <div className="flex gap-2 flex-wrap">
+            {ROLES.map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setCaptainLane(r)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  captainLane === r
+                    ? "bg-[#C8A84B] text-black"
+                    : "bg-[#0D1B2E] text-gray-400 hover:text-white border border-[#1E3A5F]"
+                }`}
+              >
+                <img
+                  src={ROLE_ICON_URL[r]} alt={r} width={14} height={14}
+                  className="w-3.5 h-3.5"
+                  style={{ filter: captainLane === r ? "none" : "invert(1) sepia(1) saturate(1.2)" }}
+                />
+                {ROLE_LABELS[r]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -401,17 +461,22 @@ function CriarTimeForm() {
           </div>
         </div>
 
-        {/* ── Jogadores ── */}
+        {/* ── Roster ── */}
         <div className="card-lol space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-[#C8A84B] font-semibold text-sm uppercase tracking-widest">Roster</h2>
-            <span className="text-gray-600 text-xs">{players.length}/5 jogadores adicionados</span>
+            <span className="text-gray-600 text-xs">
+              {players.length + 1}/5 · capitão + {players.length} jogador{players.length !== 1 ? "es" : ""}
+            </span>
           </div>
 
           {/* Busca por Riot ID */}
-          {players.length < 5 && (
+          {players.length < 4 && (
             <div className="space-y-3">
-              <label className="block text-gray-400 text-sm">Adicionar jogador por Riot ID</label>
+              <label className="block text-gray-400 text-sm">
+                Adicionar jogador por Riot ID
+                <span className="ml-1 text-gray-600 font-normal">(apenas contas cadastradas terão status "aceito" automaticamente)</span>
+              </label>
               <div className="flex gap-2">
                 <input
                   value={searchQuery}
@@ -449,37 +514,52 @@ function CriarTimeForm() {
                       <div className="w-10 h-10 rounded-full bg-[#0D1B2E] border border-[#1E3A5F] flex items-center justify-center">👤</div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-semibold truncate">
-                        {searchResult.gameName}
-                        <span className="text-gray-500 font-normal">#{searchResult.tagLine}</span>
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-white text-sm font-semibold truncate">
+                          {searchResult.gameName}
+                          <span className="text-gray-500 font-normal">#{searchResult.tagLine}</span>
+                        </p>
+                        {(searchResult as any).existingRiotAccountId ? (
+                          <span className="text-[10px] bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 px-1.5 py-0.5 rounded font-bold">
+                            ✓ No sistema
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-yellow-900/30 text-yellow-500 border border-yellow-700/30 px-1.5 py-0.5 rounded">
+                            Não cadastrado
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs" style={{ color: TIER_COLORS[searchResult.tier] ?? TIER_COLORS.UNRANKED }}>
                         {searchResult.tier === "UNRANKED" ? "Sem rank" : `${searchResult.tier} ${searchResult.rank} · ${searchResult.lp} LP`}
                       </p>
                     </div>
                   </div>
 
-                  {/* Seleção de role */}
+                  {/* Seleção de lane */}
                   <div>
-                    <p className="text-gray-500 text-xs mb-2">Selecione a role deste jogador:</p>
+                    <p className="text-gray-500 text-xs mb-2">Lane deste jogador:</p>
                     <div className="flex gap-2 flex-wrap">
                       {ROLES.map(r => (
                         <button
                           key={r}
                           type="button"
-                          onClick={() => setAddRole(r)}
-                          disabled={takenRoles.has(r)}
+                          onClick={() => setAddLane(r)}
+                          disabled={takenLanes.has(r)}
                           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            addRole === r
+                            addLane === r
                               ? "bg-[#C8A84B] text-black"
-                              : takenRoles.has(r)
+                              : takenLanes.has(r)
                               ? "bg-[#0D1B2E] text-gray-700 cursor-not-allowed"
                               : "bg-[#0D1B2E] text-gray-400 hover:text-white border border-[#1E3A5F]"
                           }`}
                         >
-                          <span>{ROLE_ICONS[r]}</span>
-                          <span>{ROLE_LABELS[r]}</span>
-                          {takenRoles.has(r) && <span className="ml-1">✓</span>}
+                          <img
+                            src={ROLE_ICON_URL[r]} alt={r} width={14} height={14}
+                            className="w-3.5 h-3.5"
+                            style={{ filter: addLane === r ? "none" : "invert(1) sepia(1) saturate(1.2)" }}
+                          />
+                          {ROLE_LABELS[r]}
+                          {takenLanes.has(r) && <span className="ml-1">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -499,80 +579,66 @@ function CriarTimeForm() {
 
           {/* Lista do roster atual */}
           {players.length > 0 && (
-            <div className="space-y-2">
-              <div className="border-t border-[#1E3A5F] pt-3">
-                {players.map(p => (
-                  <div key={p.puuid} className="flex items-center gap-3 py-2 border-b border-[#1E3A5F]/50 last:border-0">
-                    <span className="text-lg w-6 text-center">{ROLE_ICONS[p.role]}</span>
-                    {p.profileIconId ? (
-                      <img
-                        src={`https://ddragon.leagueoflegends.com/cdn/${DDRAGON}/img/profileicon/${p.profileIconId}.png`}
-                        alt="ícone" width={32} height={32}
-                        className="rounded-full border border-[#1E3A5F] w-8 h-8"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-[#0D1B2E] border border-[#1E3A5F] flex items-center justify-center text-sm">👤</div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm truncate">
-                        {p.gameName}<span className="text-gray-600">#{p.tagLine}</span>
-                      </p>
-                      <p className="text-xs" style={{ color: TIER_COLORS[p.tier] ?? TIER_COLORS.UNRANKED }}>
-                        {p.tier === "UNRANKED" ? "Sem rank" : `${p.tier} ${p.rank}`}
-                      </p>
-                    </div>
-                    <span className="text-gray-600 text-xs">{ROLE_LABELS[p.role]}</span>
-                    <button
-                      type="button"
-                      onClick={() => removePlayer(p.puuid)}
-                      className="text-gray-700 hover:text-red-400 transition-colors text-lg leading-none"
-                      aria-label="Remover jogador"
-                    >×</button>
+            <div className="border-t border-[#1E3A5F] pt-3 space-y-2">
+              {players.map(p => (
+                <div key={p.puuid} className="flex items-center gap-3 py-2 border-b border-[#1E3A5F]/50 last:border-0">
+                  <img
+                    src={ROLE_ICON_URL[p.lane]} alt={p.lane} width={16} height={16}
+                    className="w-4 h-4 opacity-60 flex-shrink-0"
+                    style={{ filter: "invert(1) sepia(1) saturate(1.5) hue-rotate(5deg)" }}
+                  />
+                  {p.profileIconId ? (
+                    <img
+                      src={`https://ddragon.leagueoflegends.com/cdn/${DDRAGON}/img/profileicon/${p.profileIconId}.png`}
+                      alt="ícone" width={28} height={28}
+                      className="rounded-full border border-[#1E3A5F] w-7 h-7 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-[#0D1B2E] border border-[#1E3A5F] flex items-center justify-center flex-shrink-0">👤</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm truncate">
+                      {p.gameName}<span className="text-gray-600">#{p.tagLine}</span>
+                    </p>
+                    <p className="text-[10px]" style={{ color: TIER_COLORS[p.tier] ?? TIER_COLORS.UNRANKED }}>
+                      {ROLE_LABELS[p.lane]} · {p.tier === "UNRANKED" ? "Sem rank" : `${p.tier} ${p.rank}`}
+                    </p>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Slots vazios */}
-          {ROLES.filter(r => !takenRoles.has(r)).length > 0 && (
-            <div className="space-y-1">
-              <p className="text-gray-700 text-xs">Vagas em aberto:</p>
-              <div className="flex gap-2 flex-wrap">
-                {ROLES.filter(r => !takenRoles.has(r)).map(r => (
-                  <span key={r} className="flex items-center gap-1 px-2 py-1 bg-[#0A1428] border border-dashed border-[#1E3A5F] rounded-lg text-gray-700 text-xs">
-                    {ROLE_ICONS[r]} {ROLE_LABELS[r]}
-                  </span>
-                ))}
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => removePlayer(p.puuid)}
+                    className="text-gray-600 hover:text-red-400 text-xs transition-colors p-1"
+                    aria-label="Remover jogador"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Erro global */}
         {error && (
-          <div className="bg-red-900/30 border border-red-500/40 rounded-lg p-3">
+          <div className="bg-red-900/20 border border-red-700/40 rounded-lg p-3">
             <p className="text-red-400 text-sm">⚠️ {error}</p>
           </div>
         )}
 
-        {/* Botões */}
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="btn-outline-gold flex-1 py-3"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={loading || !nome.trim() || tag.trim().length < 2}
-            className="btn-gold flex-1 py-3"
-          >
-            {loading ? "Criando..." : tournamentId ? "Criar e Inscrever Time" : "Criar Time"}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={loading || !nome.trim() || tag.length < 2}
+          className="w-full bg-[#C8A84B] hover:bg-[#d4b55a] disabled:opacity-40 disabled:cursor-not-allowed
+                     text-black font-black text-base py-3 rounded-xl transition-colors"
+        >
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="inline-block w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+              Criando time...
+            </span>
+          ) : (
+            "🛡️ Criar Time"
+          )}
+        </button>
       </form>
     </div>
   );
@@ -580,13 +646,11 @@ function CriarTimeForm() {
 
 export default function CriarTimePage() {
   return (
-    <Suspense
-      fallback={
-        <div className="max-w-2xl mx-auto card-lol py-16 text-center">
-          <p className="text-gray-400 animate-pulse">Carregando...</p>
-        </div>
-      }
-    >
+    <Suspense fallback={
+      <div className="max-w-2xl mx-auto py-16 text-center">
+        <p className="text-gray-400 animate-pulse">Carregando...</p>
+      </div>
+    }>
       <CriarTimeForm />
     </Suspense>
   );
