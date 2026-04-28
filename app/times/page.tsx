@@ -3,12 +3,12 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-const DDRAGON = "14.24.1";
-
+const ROLE_ORDER: Record<string, number> = {
+  TOP: 0, JUNGLE: 1, MID: 2, ADC: 3, SUPPORT: 4,
+};
 const ROLE_LABELS: Record<string, string> = {
   TOP: "Top", JUNGLE: "Jungle", MID: "Mid", ADC: "ADC", SUPPORT: "Suporte",
 };
-
 const ROLE_ICON_URL: Record<string, string> = {
   TOP:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-top.svg",
   JUNGLE:  "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-jungle.svg",
@@ -16,23 +16,19 @@ const ROLE_ICON_URL: Record<string, string> = {
   ADC:     "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-bottom.svg",
   SUPPORT: "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-champ-select/global/default/svg/position-utility.svg",
 };
-
 const TIER_HEX: Record<string, string> = {
   CHALLENGER: "#F4C874", GRANDMASTER: "#CD4545", MASTER: "#9D48E0",
   DIAMOND: "#576BCE", EMERALD: "#2AC56F", PLATINUM: "#00B2A9",
   GOLD: "#C8A84B", SILVER: "#A8A9AD", BRONZE: "#CD7F32",
   IRON: "#8B8B8B", UNRANKED: "#4B5563",
 };
-
 const TIER_ORDER: Record<string, number> = {
   CHALLENGER: 10, GRANDMASTER: 9, MASTER: 8, DIAMOND: 7,
   EMERALD: 6, PLATINUM: 5, GOLD: 4, SILVER: 3, BRONZE: 2,
   IRON: 1, UNRANKED: 0,
 };
-
-// Regex UUID formato 8-4-4-4-12
+const DDRAGON = "14.24.1";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const ROLES = ["TOP", "JUNGLE", "MID", "ADC", "SUPPORT"] as const;
 
 type RiotAccount = {
@@ -53,7 +49,7 @@ type TeamMember = {
   id: string;
   team_role: string;
   status: string;
-  lane: string | null; // coluna extra se existir; NULL caso contrário
+  lane: string | null;
   riot_account: RiotAccount | null;
   rank_snapshot: RankSnapshot | null;
 };
@@ -71,14 +67,6 @@ type Team = {
 export default async function TimesPage() {
   const admin = createAdminClient();
 
-  // ─────────────────────────────────────────────────────────────────
-  // 🔴 FIX CRÍTICO: busca via team_members → riot_accounts
-  //    A tabela `players` usa players.team_id que pode estar vazia.
-  //    O fluxo correto é:
-  //      teams  →  team_members (status=accepted)
-  //             →  riot_accounts  (game_name, tag_line, profile_icon_id)
-  //             →  rank_snapshots (tier, rank, lp)  — latest por riot_account_id
-  // ─────────────────────────────────────────────────────────────────
   const { data: rawTeams, error } = await admin
     .from("teams")
     .select(`
@@ -93,7 +81,6 @@ export default async function TimesPage() {
         )
       )
     `)
-    .eq("team_members.status", "accepted")
     .order("name");
 
   if (error) console.error("[TimesPage] erro teams:", error.message);
@@ -107,7 +94,6 @@ export default async function TimesPage() {
     }
   }
 
-  // Busca o rank_snapshot mais recente por riot_account_id (soloqueue)
   const rankMap: Record<string, RankSnapshot> = {};
   if (allRiotIds.length > 0) {
     const { data: snapshots } = await admin
@@ -117,7 +103,6 @@ export default async function TimesPage() {
       .order("recorded_at", { ascending: false });
 
     for (const snap of snapshots ?? []) {
-      // Mantém somente o registro mais recente por account
       if (!rankMap[snap.riot_account_id]) {
         rankMap[snap.riot_account_id] = {
           tier: snap.tier ?? "UNRANKED",
@@ -128,12 +113,10 @@ export default async function TimesPage() {
     }
   }
 
-  // Monta estrutura final tipada
   const teams: Team[] = (rawTeams ?? []).map((t: any) => ({
     id: t.id,
     name: t.name,
     tag: t.tag,
-    // 🟡 FIX: slug pode ser UUID ou string amigável — usa UUID_RE para detectar
     slug: t.slug ?? null,
     logo_url: t.logo_url ?? null,
     banner_url: t.banner_url ?? null,
@@ -148,12 +131,10 @@ export default async function TimesPage() {
           ? {
               id: m.riot_account.id,
               game_name: m.riot_account.game_name ?? "—",
-              // 🔴 FIX CRÍTICO: normaliza tag_line para evitar "#undefined"
               tag_line:
                 m.riot_account.tag_line && m.riot_account.tag_line !== "undefined"
                   ? m.riot_account.tag_line
                   : "BR1",
-              // 🟡 FIX: coluna correta é profile_icon_id (não profile_icon)
               profile_icon_id: m.riot_account.profile_icon_id ?? null,
               summoner_level: m.riot_account.summoner_level ?? null,
             }
@@ -201,11 +182,11 @@ export default async function TimesPage() {
         {teams.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {teams.map((team) => {
-              // Agrupa membros por lane (campo lane) ou fallback por posição na lista
+              // Agrupa membros por lane
               const byLane = (lane: string) =>
-                team.members.find((m) => (m.lane ?? "").toUpperCase() === lane) ??
-                team.members.find((m) => m.lane == null) ?? // fallback: sem lane definida
-                null;
+                team.members
+                  .filter((m) => (m.lane ?? "").toUpperCase() === lane)
+                  .sort((a, b) => (ROLE_ORDER[a.lane ?? ""] ?? 99) - (ROLE_ORDER[b.lane ?? ""] ?? 99))[0] ?? null;
 
               // Tier médio do time
               const ranked = team.members.filter(
@@ -225,8 +206,9 @@ export default async function TimesPage() {
                 Object.entries(TIER_ORDER).find(([, v]) => v === avgTierIdx)?.[0] ?? null;
               const avgColor = avgTierName ? (TIER_HEX[avgTierName] ?? "#4B5563") : "#4B5563";
 
-              // href do time: slug amigável ou ID (UUID)
-              const teamHref = `/times/${team.slug && !UUID_RE.test(team.slug) ? team.slug : team.id}`;
+              const teamHref = `/times/${
+                team.slug && !UUID_RE.test(team.slug) ? team.slug : team.id
+              }`;
 
               return (
                 <Link
@@ -260,8 +242,8 @@ export default async function TimesPage() {
                       className="absolute inset-0"
                       style={{ background: "linear-gradient(180deg, transparent 30%, #0D1B2E 100%)" }}
                     />
-                    {/* 🟢 FIX: linha dourada via classe Tailwind (sem onMouseOver inline) */}
-                    <div className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity"
+                    <div
+                      className="absolute top-0 left-0 right-0 h-[2px] opacity-0 group-hover:opacity-100 transition-opacity"
                       style={{ background: "linear-gradient(90deg, transparent, #C8A84B, transparent)" }}
                     />
                     <div className="absolute bottom-2 left-3">
@@ -316,14 +298,12 @@ export default async function TimesPage() {
 
                     {/* Roster por lane */}
                     <div className="space-y-1">
-                      {ROLES.map((role, idx) => {
-                        // Tenta casar por lane; fallback por índice para times sem lane definida
-                        const member =
-                          byLane(role) ??
-                          (team.members[idx] ?? null);
+                      {ROLES.map((role) => {
+                        const member = byLane(role);
                         const ra = member?.riot_account ?? null;
                         const snap = member?.rank_snapshot ?? null;
-                        const tierColor = TIER_HEX[(snap?.tier ?? "UNRANKED").toUpperCase()] ?? "#4B5563";
+                        const tierColor =
+                          TIER_HEX[(snap?.tier ?? "UNRANKED").toUpperCase()] ?? "#4B5563";
 
                         return (
                           <div key={role} className="flex items-center gap-1.5 text-xs">
@@ -334,14 +314,16 @@ export default async function TimesPage() {
                               height={14}
                               loading="lazy"
                               className="w-3.5 h-3.5 opacity-50 flex-shrink-0"
-                              style={{ filter: "invert(1) sepia(1) saturate(1.5) hue-rotate(5deg)" }}
+                              style={{
+                                filter:
+                                  "invert(1) sepia(1) saturate(1.5) hue-rotate(5deg)",
+                              }}
                             />
                             <span className="text-gray-600 w-12 shrink-0">
                               {ROLE_LABELS[role]}
                             </span>
                             {ra ? (
                               <div className="flex items-center gap-1 min-w-0 flex-1">
-                                {/* 🟡 FIX: usa profile_icon_id (coluna correta em riot_accounts) */}
                                 {ra.profile_icon_id ? (
                                   <img
                                     src={`https://ddragon.leagueoflegends.com/cdn/${DDRAGON}/img/profileicon/${ra.profile_icon_id}.png`}
@@ -358,7 +340,6 @@ export default async function TimesPage() {
                                     style={{ background: tierColor }}
                                   />
                                 )}
-                                {/* 🔴 FIX CRÍTICO: game_name#tag_line sem undefined */}
                                 <span className="text-gray-300 truncate">
                                   {ra.game_name}
                                   <span className="text-gray-600">#{ra.tag_line}</span>
