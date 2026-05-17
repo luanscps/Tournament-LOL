@@ -78,14 +78,9 @@ export async function updateTournament(id: string, formData: FormData) {
 
 /**
  * deleteTournament — APENAS ADMIN.
- *
- * Fluxo de segurança:
- *  1. requireAdmin() valida a sessão SSR e garante is_admin = true.
- *  2. createAdminClient() (service_role) executa o DELETE sem RLS,
- *     permitindo que ON DELETE CASCADE propague para inscricoes, matches,
- *     teams, fases, seedings e prize_distribution sem bloqueio.
+ * Retorno explicitamente tipado: TypeScript sabe que "error" é sempre string.
  */
-export async function deleteTournament(id: string) {
+export async function deleteTournament(id: string): Promise<{ success: true } | { error: string }> {
   try {
     await requireAdmin();
 
@@ -107,14 +102,14 @@ export async function deleteTournament(id: string) {
 
 /**
  * deleteTournamentAction — wrapper para form action em Server Component.
- * Recebe FormData com tournamentId e redireciona após concluão.
+ * Como deleteTournament retorna union tipada, result.error é garantidamente string.
  */
 export async function deleteTournamentAction(formData: FormData) {
   const id = formData.get("tournamentId") as string;
   if (!id) return;
 
   const result = await deleteTournament(id);
-  if (result && "error" in result) {
+  if ("error" in result) {
     redirect(`/admin/tournaments?error=${encodeURIComponent(result.error)}`);
   }
 
