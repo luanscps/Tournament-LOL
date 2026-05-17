@@ -4,10 +4,11 @@ import {
   requireRiotLinked,
   requireTournamentOrganizerOrAdmin,
 } from '@/lib/supabase/permissions';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
-// start_date é a coluna real; starts_at é GENERATED ALWAYS AS (start_date) STORED — nunca enviar manualmente.
 const TournamentSchema = z.object({
   name:        z.string().min(3).max(80),
   slug:        z.string().min(3).max(80).regex(/^[a-z0-9-]+$/),
@@ -17,12 +18,6 @@ const TournamentSchema = z.object({
   status:      z.enum(["DRAFT", "OPEN", "IN_PROGRESS", "FINISHED", "CANCELLED"]),
 });
 
-/**
- * Criar torneio:
- *  - Qualquer conta autenticada pode criar, DESDE QUE tenha conta Riot primária vinculada.
- *  - Admins são isentos da trava de Riot.
- *  - O criador se torna organizer_id e created_by automaticamente.
- */
 export async function createTournament(formData: FormData) {
   try {
     const { supabase, profile } = await requireRiotLinked();
@@ -55,10 +50,6 @@ export async function createTournament(formData: FormData) {
   }
 }
 
-/**
- * Atualizar torneio:
- *  - Organizador responsável (organizer_id ou created_by) OU admin.
- */
 export async function updateTournament(id: string, formData: FormData) {
   try {
     const { supabase } = await requireTournamentOrganizerOrAdmin(id);
@@ -86,18 +77,46 @@ export async function updateTournament(id: string, formData: FormData) {
 }
 
 /**
- * Deletar torneio:
- *  - Ação destrutiva: apenas admins.
+ * deleteTournament — APENAS ADMIN.
+ *
+ * Fluxo de segurança:
+ *  1. requireAdmin() valida a sessão SSR e garante is_admin = true.
+ *  2. createAdminClient() (service_role) executa o DELETE sem RLS,
+ *     permitindo que ON DELETE CASCADE propague para inscricoes, matches,
+ *     teams, fases, seedings e prize_distribution sem bloqueio.
  */
 export async function deleteTournament(id: string) {
   try {
-    const { supabase } = await requireAdmin();
-    const { error } = await supabase.from("tournaments").delete().eq("id", id);
+    await requireAdmin();
+
+    const adminClient = createAdminClient();
+    const { error } = await adminClient
+      .from("tournaments")
+      .delete()
+      .eq("id", id);
+
     if (error) return { error: error.message };
+
     revalidatePath("/admin/tournaments");
     revalidatePath("/torneios");
     return { success: true };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Erro ao deletar torneio" };
   }
+}
+
+/**
+ * deleteTournamentAction — wrapper para form action em Server Component.
+ * Recebe FormData com tournamentId e redireciona após concluão.
+ */
+export async function deleteTournamentAction(formData: FormData) {
+  const id = formData.get("tournamentId") as string;
+  if (!id) return;
+
+  const result = await deleteTournament(id);
+  if (result && "error" in result) {
+    redirect(`/admin/tournaments?error=${encodeURIComponent(result.error)}`);
+  }
+
+  redirect("/admin/tournaments");
 }

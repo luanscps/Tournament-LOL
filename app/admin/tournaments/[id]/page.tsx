@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { TournamentForm } from "@/components/admin/TournamentForm";
 import { GenerateBracketButton } from "@/components/admin/GenerateBracketButton";
+import { DeleteTournamentButton } from "@/components/tournament/DeleteTournamentButton";
+import { deleteTournamentAction } from "@/lib/actions/tournament";
 
 export default async function AdminTournamentPage({
   params,
@@ -53,53 +55,31 @@ export default async function AdminTournamentPage({
     .eq("tournament_id", id);
 
   const STATUS_LABEL: Record<string, string> = {
-    draft:        "Rascunho",
-    open:         "Aberto",
-    registration: "Inscrições abertas",
-    checkin:      "Check-in",
-    ongoing:      "Em andamento",
-    active:       "Em andamento",
-    finished:     "Finalizado",
-    // uppercase legado
-    DRAFT:        "Rascunho",
-    OPEN:         "Aberto",
-    CHECKIN:      "Check-in",
-    ACTIVE:       "Em andamento",
-    IN_PROGRESS:  "Em andamento",
-    FINISHED:     "Finalizado",
+    draft: "Rascunho", open: "Aberto", registration: "Inscrições abertas",
+    checkin: "Check-in", ongoing: "Em andamento", active: "Em andamento",
+    finished: "Finalizado", DRAFT: "Rascunho", OPEN: "Aberto",
+    CHECKIN: "Check-in", ACTIVE: "Em andamento", IN_PROGRESS: "Em andamento",
+    FINISHED: "Finalizado",
   };
 
   const navLinks = [
-    {
-      href: `/admin/tournaments/${id}/fases`,
-      label: "Fases",
-      badge: stagesCount ? `(${stagesCount})` : null,
-    },
-    {
-      href: `/admin/tournaments/${id}/inscricoes`,
-      label: "Inscrições",
-      badge: pendingTeams ? `(${pendingTeams} pendentes)` : null,
-    },
-    {
-      href: `/admin/tournaments/${id}/checkin`,
-      label: "Check-ins",
-      badge: checkedInTeams ? `(${checkedInTeams} ✓)` : null,
-    },
-    {
-      href: `/admin/tournaments/${id}/partidas`,
-      label: "Partidas",
-      badge: matchesCount ? `(${matchesCount})` : null,
-    },
-    {
-      href: t.slug ? `/torneios/${t.slug}` : `/t/${id}`,
-      label: "Ver público ↗",
-      badge: null,
-      external: true,
-    },
+    { href: `/admin/tournaments/${id}/fases`,      label: "Fases",       badge: stagesCount  ? `(${stagesCount})`          : null },
+    { href: `/admin/tournaments/${id}/inscricoes`, label: "Inscrições", badge: pendingTeams ? `(${pendingTeams} pendentes)` : null },
+    { href: `/admin/tournaments/${id}/checkin`,    label: "Check-ins",   badge: checkedInTeams ? `(${checkedInTeams} ✓)`  : null },
+    { href: `/admin/tournaments/${id}/partidas`,   label: "Partidas",    badge: matchesCount ? `(${matchesCount})`          : null },
+    { href: t.slug ? `/torneios/${t.slug}` : `/t/${id}`, label: "Ver público ↗", badge: null, external: true },
   ];
+
+  async function boundDeleteAction(formData: FormData) {
+    "use server";
+    formData.set("tournamentId", id);
+    return deleteTournamentAction(formData);
+  }
 
   return (
     <div className="space-y-8">
+
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <div className="mb-1">
@@ -108,11 +88,9 @@ export default async function AdminTournamentPage({
             </Link>
           </div>
           <h1 className="text-2xl font-bold text-white">{t.name}</h1>
-          <span className="text-xs text-gray-400">
-            Status: {STATUS_LABEL[t.status] ?? t.status}
-          </span>
+          <span className="text-xs text-gray-400">Status: {STATUS_LABEL[t.status] ?? t.status}</span>
         </div>
-        <div className="flex gap-2 flex-wrap justify-end">
+        <div className="flex gap-2 flex-wrap justify-end items-center">
           {navLinks.map((link) => (
             <Link
               key={link.href}
@@ -124,41 +102,33 @@ export default async function AdminTournamentPage({
               {link.label}{link.badge ? ` ${link.badge}` : ""}
             </Link>
           ))}
+          <DeleteTournamentButton action={boundDeleteAction} />
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-white">{totalTeams ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Total inscritos</p>
-        </div>
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-yellow-400">{pendingTeams ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Pendentes</p>
-        </div>
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-green-400">{approvedTeams ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Aprovados</p>
-        </div>
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-blue-400">{checkedInTeams ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">Check-in feito</p>
-        </div>
-        <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 text-center">
-          <p className="text-2xl font-bold text-[#C8A84B]">{t.max_teams}</p>
-          <p className="text-xs text-gray-400 mt-1">Vagas totais</p>
-        </div>
+        {[
+          { label: "Total inscritos", value: totalTeams   ?? 0, color: "text-white"        },
+          { label: "Pendentes",       value: pendingTeams ?? 0, color: "text-yellow-400"   },
+          { label: "Aprovados",       value: approvedTeams ?? 0, color: "text-green-400"  },
+          { label: "Check-in feito",  value: checkedInTeams ?? 0, color: "text-blue-400" },
+          { label: "Vagas totais",    value: t.max_teams,        color: "text-[#C8A84B]"  },
+        ].map((s) => (
+          <div key={s.label} className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4 text-center">
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-xs text-gray-400 mt-1">{s.label}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Bracket Generation */}
+      {/* Bracket */}
       <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4">
         <h2 className="text-sm font-bold text-[#C8A84B] mb-1">Gerar Bracket</h2>
         <p className="text-xs text-gray-400 mb-3">
           {matchesCount && matchesCount > 0
             ? `✅ Bracket já gerado — ${matchesCount} partidas criadas`
-            : `Usa times com check-in (ou todos aprovados como fallback)`
-          }
+            : `Usa times com check-in (ou todos aprovados como fallback)`}
         </p>
         <GenerateBracketButton
           tournamentId={id}
@@ -167,7 +137,7 @@ export default async function AdminTournamentPage({
         />
       </div>
 
-      {/* Edit Form */}
+      {/* Editar */}
       <div className="bg-[#0D1B2E] border border-[#1E3A5F] rounded-lg p-4">
         <h2 className="text-sm font-bold text-gray-400 mb-4">Editar Torneio</h2>
         <TournamentForm
@@ -178,13 +148,22 @@ export default async function AdminTournamentPage({
             slug:        t.slug        ?? "",
             description: t.description ?? "",
             max_teams:   t.max_teams   ?? 16,
-            starts_at:   t.starts_at
-              ? new Date(t.starts_at).toISOString().slice(0, 16)
-              : "",
-            status:      t.status      ?? "draft",
+            starts_at:   t.starts_at ? new Date(t.starts_at).toISOString().slice(0, 16) : "",
+            status:      t.status     ?? "draft",
           }}
         />
       </div>
+
+      {/* Zona de Perigo */}
+      <div className="bg-red-950/20 border border-red-800/30 rounded-lg p-4">
+        <h2 className="text-sm font-bold text-red-400 mb-1">⚠️ Zona de Perigo</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Deletar o torneio remove permanentemente todas as inscrições, partidas, fases e times vinculados.
+          Esta ação não pode ser desfeita.
+        </p>
+        <DeleteTournamentButton action={boundDeleteAction} />
+      </div>
+
     </div>
   );
 }
