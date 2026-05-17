@@ -1,5 +1,5 @@
 // app/organizador/layout.tsx
-// Guarda: qualquer conta autenticada pode acessar (criar torneio)
+// Guard: autenticado + conta Riot primária vinculada OU admin.
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
@@ -27,7 +27,6 @@ export default async function OrganizadorLayout({ children }: { children: React.
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) redirect('/login?redirectTo=/organizador')
 
-  // Busca perfil apenas para exibir nome e verificar is_admin
   const supabaseAdmin = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -36,12 +35,30 @@ export default async function OrganizadorLayout({ children }: { children: React.
 
   const { data: profile } = await supabaseAdmin
     .from('profiles')
-    .select('is_admin, full_name, email')
+    .select('is_admin, is_banned, full_name, email')
     .eq('id', user.id)
     .single()
 
-  // Qualquer conta logada pode acessar — sem restricao de role
   if (!profile) redirect('/login?redirectTo=/organizador')
+  if (profile.is_banned) redirect('/dashboard?error=conta_suspensa')
+
+  // Admins têm acesso irrestrito
+  const isAdmin = profile.is_admin === true
+
+  if (!isAdmin) {
+    // Usuários comuns: exige conta Riot primária vinculada
+    const { data: riotAccount } = await supabaseAdmin
+      .from('riot_accounts')
+      .select('id')
+      .eq('profile_id', user.id)
+      .eq('is_primary', true)
+      .maybeSingle()
+
+    if (!riotAccount) {
+      // Redireciona com mensagem explicativa
+      redirect('/dashboard?error=riot_necessaria_para_criar_torneio')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#060E1A]">
@@ -55,7 +72,7 @@ export default async function OrganizadorLayout({ children }: { children: React.
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">{profile.full_name ?? profile.email}</span>
-          {profile.is_admin && (
+          {isAdmin && (
             <Link href="/admin" className="text-xs text-purple-400 hover:text-purple-200 transition-colors">Admin →</Link>
           )}
           <Link href="/dashboard" className="text-xs text-gray-400 hover:text-white transition-colors">← Dashboard</Link>

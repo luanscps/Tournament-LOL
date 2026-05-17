@@ -1,46 +1,30 @@
 "use server";
-import { createClient } from "@/lib/supabase/server";
+import { requireTournamentOrganizerOrAdmin } from '@/lib/supabase/permissions';
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 const ResultSchema = z.object({
   winner_team_id: z.string().uuid(),
-  score_a: z.coerce.number().min(0),
-  score_b: z.coerce.number().min(0),
-  match_id_riot: z.string().optional(),
+  score_a:        z.coerce.number().min(0),
+  score_b:        z.coerce.number().min(0),
+  match_id_riot:  z.string().optional(),
 });
 
 const CreatePartidaSchema = z.object({
-  team_a_id: z.string().uuid(),
-  team_b_id: z.string().uuid(),
-  round: z.coerce.number().min(1),
+  team_a_id:    z.string().uuid(),
+  team_b_id:    z.string().uuid(),
+  round:        z.coerce.number().min(1),
   match_number: z.coerce.number().min(1),
   scheduled_at: z.string().optional(),
-  fase_id: z.string().uuid().optional(),
-  best_of: z.coerce.number().min(1).max(7).default(1),
+  fase_id:      z.string().uuid().optional(),
+  best_of:      z.coerce.number().min(1).max(7).default(1),
 });
-
-async function requireOrgOrAdmin(supabase: any, tornId: string, userId: string) {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("is_admin")
-    .eq("id", userId)
-    .single();
-  if (profile?.is_admin) return true;
-  const { data: torneio } = await supabase
-    .from("tournaments")
-    .select("created_by")
-    .eq("id", tornId)
-    .single();
-  if (torneio?.created_by !== userId) throw new Error("Sem permissão");
-  return true;
-}
 
 /** Avança o vencedor para a próxima partida do bracket (eliminatório simples) */
 async function avancarVencedor(supabase: any, match: any, winnerId: string) {
   const { round, match_number, tournament_id } = match;
-  const proximoRound = round + 1;
-  const proximaPartidaNum = Math.ceil(match_number / 2);
+  const proximoRound       = round + 1;
+  const proximaPartidaNum  = Math.ceil(match_number / 2);
 
   const { data: proximaPartida } = await supabase
     .from("matches")
@@ -59,12 +43,12 @@ async function avancarVencedor(supabase: any, match: any, winnerId: string) {
     const isSlotA = match_number % 2 !== 0;
     await supabase.from("matches").insert({
       tournament_id,
-      team_a_id: isSlotA ? winnerId : null,
-      team_b_id: isSlotA ? null : winnerId,
-      round: proximoRound,
+      team_a_id:  isSlotA ? winnerId : null,
+      team_b_id:  isSlotA ? null : winnerId,
+      round:      proximoRound,
       match_number: proximaPartidaNum,
-      best_of: match.best_of ?? 1,
-      status: "pending",
+      best_of:    match.best_of ?? 1,
+      status:     "SCHEDULED",
     });
   }
 }
@@ -83,17 +67,13 @@ export async function updateResultadoPartida(
   formData: FormData
 ) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { error: "Não autenticado" };
-    await requireOrgOrAdmin(supabase, tournamentId, user.id);
+    const { supabase } = await requireTournamentOrganizerOrAdmin(tournamentId);
 
     const parsed = ResultSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { error: parsed.error.errors[0].message };
 
     const { score_a, score_b, winner_team_id, match_id_riot } = parsed.data;
 
-    // FIX: inclui team_a_id e team_b_id no select para uso no picks_bans
     const { data: match, error: errMatch } = await supabase
       .from("matches")
       .select("id, round, match_number, tournament_id, best_of, team_a_id, team_b_id")
@@ -105,12 +85,12 @@ export async function updateResultadoPartida(
     const { error } = await supabase
       .from("matches")
       .update({
-        winner_id: winner_team_id,
+        winner_id:     winner_team_id,
         score_a,
         score_b,
         riot_match_id: match_id_riot ?? null,
-        status: "finished",
-        finished_at: new Date().toISOString(),
+        status:        "FINISHED",
+        finished_at:   new Date().toISOString(),
       })
       .eq("id", matchDbId);
 
@@ -118,15 +98,12 @@ export async function updateResultadoPartida(
 
     await avancarVencedor(supabase, match, winner_team_id);
 
-    // FIX: picks_bans não é tabela separada — é campo JSONB dentro de match_games.
-    // Agrupamos por game_number (padrão: game 1) e fazemos upsert no campo picks_bans
-    // da tabela match_games usando o game já existente ou criando um novo.
+    // picks_bans: campo JSONB dentro de match_games
     const picksBansRaw = formData.get("picks_bans");
     if (picksBansRaw) {
       try {
         const picksBans = JSON.parse(picksBansRaw as string);
         if (Array.isArray(picksBans) && picksBans.length > 0) {
-          // Enriquece cada entrada com team_id resolvido antes de salvar no JSONB
           const enriched = picksBans
             .filter((pb: any) => pb.champion)
             .map((pb: any) => ({
@@ -135,7 +112,6 @@ export async function updateResultadoPartida(
             }));
 
           if (enriched.length > 0) {
-            // Upsert no campo JSONB picks_bans da match_game correspondente (game_number=1 por padrão)
             const { data: existingGame } = await supabase
               .from("match_games")
               .select("id")
@@ -150,9 +126,9 @@ export async function updateResultadoPartida(
                 .eq("id", existingGame.id);
             } else {
               await supabase.from("match_games").insert({
-                match_id: matchDbId,
+                match_id:    matchDbId,
                 game_number: 1,
-                picks_bans: enriched,
+                picks_bans:  enriched,
               });
             }
           }
@@ -167,6 +143,7 @@ export async function updateResultadoPartida(
       .single();
 
     const slug = torneio?.slug ?? tournamentId;
+    revalidatePath(`/organizador/torneios/${slug}/partidas`);
     revalidatePath(`/admin/torneios/${slug}/partidas`);
     revalidatePath(`/torneios/${slug}/bracket`);
     revalidatePath(`/torneios/${slug}`);
@@ -182,10 +159,7 @@ export async function createPartida(
   formData: FormData
 ) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { error: "Não autenticado" };
-    await requireOrgOrAdmin(supabase, tournamentId, user.id);
+    const { supabase } = await requireTournamentOrganizerOrAdmin(tournamentId);
 
     const parsed = CreatePartidaSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { error: parsed.error.errors[0].message };
@@ -198,14 +172,14 @@ export async function createPartida(
       .from("matches")
       .insert({
         tournament_id: tournamentId,
-        team_a_id: parsed.data.team_a_id,
-        team_b_id: parsed.data.team_b_id,
-        round: parsed.data.round,
-        match_number: parsed.data.match_number,
-        best_of: parsed.data.best_of,
-        fase_id: parsed.data.fase_id ?? null,
-        scheduled_at: parsed.data.scheduled_at ?? null,
-        status: "pending",
+        team_a_id:     parsed.data.team_a_id,
+        team_b_id:     parsed.data.team_b_id,
+        round:         parsed.data.round,
+        match_number:  parsed.data.match_number,
+        best_of:       parsed.data.best_of,
+        stage_id:      parsed.data.fase_id ?? null,
+        scheduled_at:  parsed.data.scheduled_at ?? null,
+        status:        "SCHEDULED",
       })
       .select()
       .single();
@@ -218,6 +192,7 @@ export async function createPartida(
       .eq("id", tournamentId)
       .single();
     const slug = torneio?.slug ?? tournamentId;
+    revalidatePath(`/organizador/torneios/${slug}/partidas`);
     revalidatePath(`/admin/torneios/${slug}/partidas`);
     return { success: true, data };
   } catch (e: any) {
@@ -227,17 +202,15 @@ export async function createPartida(
 
 export async function deletePartida(matchId: string, tournamentId: string) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { error: "Não autenticado" };
-    await requireOrgOrAdmin(supabase, tournamentId, user.id);
+    const { supabase } = await requireTournamentOrganizerOrAdmin(tournamentId);
 
     const { data: match } = await supabase
       .from("matches")
       .select("status")
       .eq("id", matchId)
       .single();
-    if (match?.status === "finished") {
+
+    if (match?.status === "FINISHED") {
       return { error: "Não é possível excluir uma partida já finalizada" };
     }
 
@@ -250,6 +223,7 @@ export async function deletePartida(matchId: string, tournamentId: string) {
       .eq("id", tournamentId)
       .single();
     const slug = torneio?.slug ?? tournamentId;
+    revalidatePath(`/organizador/torneios/${slug}/partidas`);
     revalidatePath(`/admin/torneios/${slug}/partidas`);
     return { success: true };
   } catch (e: any) {
@@ -258,11 +232,11 @@ export async function deletePartida(matchId: string, tournamentId: string) {
 }
 
 export async function getPartidasByTorneio(tournamentId: string) {
-  const supabase = await createClient();
+  const { supabase } = await requireTournamentOrganizerOrAdmin(tournamentId);
   const { data, error } = await supabase
     .from("matches")
     .select(
-      `id, round, match_number, status, score_a, score_b, scheduled_at, finished_at, best_of, fase_id,
+      `id, round, match_number, status, score_a, score_b, scheduled_at, finished_at, best_of, stage_id,
        team_a:teams!team_a_id(id, name, tag, logo_url),
        team_b:teams!team_b_id(id, name, tag, logo_url),
        winner:teams!winner_id(id, name, tag)`
@@ -276,10 +250,7 @@ export async function getPartidasByTorneio(tournamentId: string) {
 
 export async function gerarChaveamento(tournamentId: string, faseId?: string) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { error: "Não autenticado" };
-    await requireOrgOrAdmin(supabase, tournamentId, user.id);
+    const { supabase } = await requireTournamentOrganizerOrAdmin(tournamentId);
 
     const { data: inscricoes, error: errInsc } = await supabase
       .from("inscricoes")
@@ -292,24 +263,23 @@ export async function gerarChaveamento(tournamentId: string, faseId?: string) {
       return { error: "É necessário pelo menos 2 times aprovados para gerar o chaveamento" };
     }
 
-    const times = [...inscricoes].sort(() => Math.random() - 0.5);
-    const nextPow2 = Math.pow(2, Math.ceil(Math.log2(times.length)));
+    const times       = [...inscricoes].sort(() => Math.random() - 0.5);
+    const nextPow2    = Math.pow(2, Math.ceil(Math.log2(times.length)));
     const partidas: any[] = [];
 
     for (let i = 0; i < nextPow2 / 2; i++) {
       const timeA = times[i * 2];
       const timeB = times[i * 2 + 1];
-      if (!timeA) continue;
-      if (!timeB) continue;
+      if (!timeA || !timeB) continue;
       partidas.push({
         tournament_id: tournamentId,
-        team_a_id: timeA.team_id,
-        team_b_id: timeB.team_id,
-        round: 1,
-        match_number: i + 1,
-        best_of: 1,
-        fase_id: faseId ?? null,
-        status: "pending",
+        team_a_id:     timeA.team_id,
+        team_b_id:     timeB.team_id,
+        round:         1,
+        match_number:  i + 1,
+        best_of:       1,
+        stage_id:      faseId ?? null,
+        status:        "SCHEDULED",
       });
     }
 
@@ -326,6 +296,7 @@ export async function gerarChaveamento(tournamentId: string, faseId?: string) {
       .eq("id", tournamentId)
       .single();
     const slug = torneio?.slug ?? tournamentId;
+    revalidatePath(`/organizador/torneios/${slug}/partidas`);
     revalidatePath(`/admin/torneios/${slug}/partidas`);
     revalidatePath(`/torneios/${slug}/bracket`);
     revalidatePath(`/torneios`);

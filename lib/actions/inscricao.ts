@@ -1,67 +1,69 @@
 'use server';
-import { createClient } from '@/lib/supabase/server';
+import { requireAuth, requireTournamentOrganizerOrAdmin } from '@/lib/supabase/permissions';
 import { revalidatePath } from 'next/cache';
 
-// ─── Helper: garante admin ─────────────────────────────────────────────────
-async function requireAdmin() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Nao autenticado');
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .single();
-  if (!profile?.is_admin) throw new Error('Sem permissao');
-  return { supabase, adminId: user.id };
-}
-
-// ─── ADMIN: Aprovar inscrição ──────────────────────────────────────────────
+// ─── ORGANIZER/ADMIN: Aprovar inscrição ───────────────────────────────────────
 export async function aprovarInscricao(teamId: string, tournamentId: string) {
   try {
-    const { supabase, adminId } = await requireAdmin();
+    const { supabase, profile } = await requireTournamentOrganizerOrAdmin(tournamentId);
     const { error } = await supabase
       .from('inscricoes')
-      .update({ status: 'APPROVED', reviewed_by: adminId, reviewed_at: new Date().toISOString() })
+      .update({
+        status:      'APPROVED',
+        reviewed_by: profile.id,
+        reviewed_at: new Date().toISOString(),
+      })
       .eq('team_id', teamId)
       .eq('tournament_id', tournamentId);
     if (error) return { error: error.message };
-    revalidatePath(`/admin/tournaments/${tournamentId}/inscricoes`);
+    revalidatePath(`/organizador/torneios/${tournamentId}/inscricoes`);
     revalidatePath(`/admin/tournaments/${tournamentId}`);
+    revalidatePath(`/admin/tournaments/${tournamentId}/inscricoes`);
     return { success: true };
   } catch (e: any) {
     return { error: e.message };
   }
 }
 
-// ─── ADMIN: Rejeitar inscrição ─────────────────────────────────────────────
+// ─── ORGANIZER/ADMIN: Rejeitar inscrição ─────────────────────────────────────
 export async function rejeitarInscricao(teamId: string, tournamentId: string, notes: string) {
   try {
-    const { supabase, adminId } = await requireAdmin();
+    const { supabase, profile } = await requireTournamentOrganizerOrAdmin(tournamentId);
     const { error } = await supabase
       .from('inscricoes')
-      .update({ status: 'REJECTED', reviewed_by: adminId, reviewed_at: new Date().toISOString(), notes })
+      .update({
+        status:      'REJECTED',
+        reviewed_by: profile.id,
+        reviewed_at: new Date().toISOString(),
+        notes,
+      })
       .eq('team_id', teamId)
       .eq('tournament_id', tournamentId);
     if (error) return { error: error.message };
-    revalidatePath(`/admin/tournaments/${tournamentId}/inscricoes`);
+    revalidatePath(`/organizador/torneios/${tournamentId}/inscricoes`);
     revalidatePath(`/admin/tournaments/${tournamentId}`);
+    revalidatePath(`/admin/tournaments/${tournamentId}/inscricoes`);
     return { success: true };
   } catch (e: any) {
     return { error: e.message };
   }
 }
 
-// ─── ADMIN: Desfazer check-in ──────────────────────────────────────────────
+// ─── ORGANIZER/ADMIN: Desfazer check-in ──────────────────────────────────────
 export async function desfazerCheckin(inscricaoId: string) {
   try {
-    const { supabase, adminId: _adminId } = await requireAdmin();
+    const { supabase } = await requireAuth();
 
-    const { data: insc } = await supabase
+    const { data: insc, error: fetchErr } = await supabase
       .from('inscricoes')
       .select('tournament_id')
       .eq('id', inscricaoId)
       .single();
+
+    if (fetchErr || !insc) return { error: 'Inscrição não encontrada' };
+
+    // Revalida permissão agora que temos o tournament_id
+    await requireTournamentOrganizerOrAdmin(insc.tournament_id);
 
     const { error } = await supabase
       .from('inscricoes')
@@ -70,27 +72,24 @@ export async function desfazerCheckin(inscricaoId: string) {
 
     if (error) return { error: error.message };
 
-    if (insc?.tournament_id) {
-      revalidatePath(`/admin/tournaments/${insc.tournament_id}/checkin`);
-      revalidatePath(`/admin/tournaments/${insc.tournament_id}`);
-    }
+    revalidatePath(`/organizador/torneios/${insc.tournament_id}/checkin`);
+    revalidatePath(`/admin/tournaments/${insc.tournament_id}/checkin`);
+    revalidatePath(`/admin/tournaments/${insc.tournament_id}`);
     return { success: true };
   } catch (e: any) {
     return { error: e.message };
   }
 }
 
-// ─── Criar inscrição (capitão) ─────────────────────────────────────────────
+// ─── PLAYER: Criar inscrição (capitão de time) ────────────────────────────────
 export async function criarInscricao(teamId: string, tournamentId: string) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { error: 'Nao autenticado' };
+    const { supabase, profile } = await requireAuth();
     const { error } = await supabase.from('inscricoes').insert({
       team_id:       teamId,
       tournament_id: tournamentId,
       status:        'PENDING',
-      requested_by:  user.id,
+      requested_by:  profile.id,
     });
     if (error) return { error: error.message };
     revalidatePath('/dashboard');
@@ -101,50 +100,51 @@ export async function criarInscricao(teamId: string, tournamentId: string) {
   }
 }
 
-// ─── Inscrever time (alias público) ───────────────────────────────────────
+// ─── Alias público ────────────────────────────────────────────────────────────
 export async function inscreverTime(tournamentId: string, teamId: string) {
   return criarInscricao(teamId, tournamentId);
 }
 
-// ─── Fazer check-in (capitão) ──────────────────────────────────────────────
+// ─── PLAYER: Fazer check-in (apenas o capitão do time) ───────────────────────
 export async function fazerCheckin(inscricaoId: string) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: 'Não autenticado' };
+  try {
+    const { supabase, profile } = await requireAuth();
 
-  const { data: insc, error: fetchErr } = await supabase
-    .from('inscricoes')
-    .select('id, status, team_id, teams!inner(owner_id)')
-    .eq('id', inscricaoId)
-    .single();
+    const { data: insc, error: fetchErr } = await supabase
+      .from('inscricoes')
+      .select('id, status, team_id, teams!inner(owner_id)')
+      .eq('id', inscricaoId)
+      .single();
 
-  if (fetchErr || !insc) return { error: 'Inscrição não encontrada' };
+    if (fetchErr || !insc) return { error: 'Inscrição não encontrada' };
 
-  const team = insc.teams as any;
-  if (team.owner_id !== user.id) return { error: 'Apenas o capitão pode fazer check-in' };
-  if (insc.status !== 'APPROVED') return { error: 'Inscrição precisa estar APROVADA para check-in' };
+    const team = insc.teams as any;
+    if (team.owner_id !== profile.id) return { error: 'Apenas o capitão pode fazer check-in' };
+    if (insc.status !== 'APPROVED') return { error: 'Inscrição precisa estar APROVADA para check-in' };
 
-  const { error } = await supabase
-    .from('inscricoes')
-    .update({
-      checked_in:    true,
-      checked_in_at: new Date().toISOString(),
-      checked_in_by: user.id,
-    })
-    .eq('id', inscricaoId);
+    const { error } = await supabase
+      .from('inscricoes')
+      .update({
+        checked_in:    true,
+        checked_in_at: new Date().toISOString(),
+        checked_in_by: profile.id,
+      })
+      .eq('id', inscricaoId);
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
 
-  revalidatePath('/dashboard');
-  revalidatePath(`/dashboard/times/${insc.team_id}`);
-  revalidatePath(`/dashboard/times/${insc.team_id}/checkin`);
-  return { success: true };
+    revalidatePath('/dashboard');
+    revalidatePath(`/dashboard/times/${insc.team_id}`);
+    revalidatePath(`/dashboard/times/${insc.team_id}/checkin`);
+    return { success: true };
+  } catch (e: any) {
+    return { error: e.message };
+  }
 }
 
-// ─── Listar inscrições por torneio ─────────────────────────────────────────
-// Roster agora via team_members → riot_accounts → players (stats de perfil)
+// ─── PUBLIC: Listar inscrições por torneio ────────────────────────────────────
 export async function listarInscricoesPorTorneio(tournamentId: string) {
-  const supabase = await createClient();
+  const { supabase } = await requireAuth();
   const { data, error } = await supabase
     .from('inscricoes')
     .select(`
