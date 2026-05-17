@@ -21,26 +21,15 @@ const TournamentSchema = z.object({
 export async function createTournament(formData: FormData) {
   try {
     const { supabase, profile } = await requireRiotLinked();
-
     const parsed = TournamentSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { error: parsed.error.errors[0].message };
-
     const { start_date, ...rest } = parsed.data;
-    const payload = {
-      ...rest,
-      start_date:   start_date || null,
-      organizer_id: profile.id,
-      created_by:   profile.id,
-    };
-
     const { data, error } = await supabase
       .from("tournaments")
-      .insert(payload)
+      .insert({ ...rest, start_date: start_date || null, organizer_id: profile.id, created_by: profile.id })
       .select("id,slug")
       .single();
-
     if (error) return { error: error.message };
-
     revalidatePath("/organizador");
     revalidatePath("/admin/tournaments");
     revalidatePath("/torneios");
@@ -53,19 +42,14 @@ export async function createTournament(formData: FormData) {
 export async function updateTournament(id: string, formData: FormData) {
   try {
     const { supabase } = await requireTournamentOrganizerOrAdmin(id);
-
     const parsed = TournamentSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { error: parsed.error.errors[0].message };
-
     const { start_date, ...rest } = parsed.data;
-
     const { error } = await supabase
       .from("tournaments")
       .update({ ...rest, start_date: start_date || null })
       .eq("id", id);
-
     if (error) return { error: error.message };
-
     revalidatePath("/organizador");
     revalidatePath("/admin/tournaments");
     revalidatePath("/admin/tournaments/" + id);
@@ -78,7 +62,14 @@ export async function updateTournament(id: string, formData: FormData) {
 
 /**
  * deleteTournament — APENAS ADMIN.
- * Retorno explicitamente tipado: TypeScript sabe que "error" é sempre string.
+ *
+ * Recebe o id diretamente (não via FormData) para evitar problemas
+ * de contexto SSR ao passar server action como prop de Client Component.
+ *
+ * Fluxo:
+ *  1. requireAdmin() — valida sessão SSR + is_admin = true
+ *  2. createAdminClient() (service_role) — bypassa RLS
+ *  3. DELETE em cascade para inscricoes, matches, teams, fases, etc.
  */
 export async function deleteTournament(id: string): Promise<{ success: true } | { error: string }> {
   try {
@@ -98,20 +89,4 @@ export async function deleteTournament(id: string): Promise<{ success: true } | 
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Erro ao deletar torneio" };
   }
-}
-
-/**
- * deleteTournamentAction — wrapper para form action em Server Component.
- * Como deleteTournament retorna union tipada, result.error é garantidamente string.
- */
-export async function deleteTournamentAction(formData: FormData) {
-  const id = formData.get("tournamentId") as string;
-  if (!id) return;
-
-  const result = await deleteTournament(id);
-  if ("error" in result) {
-    redirect(`/admin/tournaments?error=${encodeURIComponent(result.error)}`);
-  }
-
-  redirect("/admin/tournaments");
 }
