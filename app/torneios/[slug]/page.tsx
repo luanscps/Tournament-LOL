@@ -1,26 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { BracketView } from "@/components/tournament/BracketView";
 import { StandingsTable } from "@/components/tournament/StandingsTable";
 import { TeamsList } from "@/components/tournament/TeamsList";
 import { DeleteTournamentButton } from "@/components/tournament/DeleteTournamentButton";
+import { deleteOwnTournament } from "@/lib/actions/tournament";
 import { getQueueLabel } from "@/lib/utils";
 
 export const revalidate = 60;
-
-async function deleteTournament(tournamentId: string) {
-  'use server'
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
-  const { error } = await supabase
-    .from('tournaments')
-    .delete()
-    .eq('id', tournamentId)
-    .eq('organizer_id', user.id)
-  if (!error) redirect('/torneios')
-}
 
 export default async function TournamentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -91,7 +79,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
     DRAFT: "Rascunho", CANCELLED: "Cancelado",
   };
 
-  const deleteTournamentBound = deleteTournament.bind(null, tournament.id);
   const tournamentStatus = tournament.status?.toUpperCase() ?? '';
   const isOpen = tournamentStatus === 'OPEN';
   const isDraftOrCancelled = tournamentStatus === 'DRAFT' || tournamentStatus === 'CANCELLED';
@@ -169,7 +156,6 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
         {isOrganizer && (
           <div className="mt-4 pt-4 border-t border-[#1E3A5F] flex flex-wrap items-center gap-3">
             <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Organizador</span>
-            {/* FIX: links agora apontam para /organizer/torneios/ */}
             <Link href={`/organizer/torneios/${tournament.id}`}
               className="text-xs px-3 py-1.5 rounded-lg border border-[#1E3A5F] text-gray-300 hover:border-[#C8A84B]/50 hover:text-[#C8A84B] transition-colors">
               ⚙️ Painel de Gestão
@@ -179,7 +165,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
               📋 Inscrições
             </Link>
             {isDraftOrCancelled ? (
-              <DeleteTournamentButton action={deleteTournamentBound} />
+              <DeleteTournamentButton tournamentId={tournament.id} action={deleteOwnTournament} />
             ) : (
               <span className="ml-auto text-xs text-gray-600 italic">Para deletar, cancele o torneio primeiro.</span>
             )}

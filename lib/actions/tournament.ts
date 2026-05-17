@@ -5,6 +5,7 @@ import {
   requireTournamentOrganizerOrAdmin,
 } from '@/lib/supabase/permissions';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -54,7 +55,7 @@ export async function updateTournament(id: string, formData: FormData) {
     revalidatePath("/admin/tournaments");
     revalidatePath("/admin/tournaments/" + id);
     revalidatePath("/torneios");
-    return { success: true };
+    return { success: true as const };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Erro ao atualizar torneio" };
   }
@@ -62,31 +63,57 @@ export async function updateTournament(id: string, formData: FormData) {
 
 /**
  * deleteTournament — APENAS ADMIN.
- *
- * Recebe o id diretamente (não via FormData) para evitar problemas
- * de contexto SSR ao passar server action como prop de Client Component.
- *
- * Fluxo:
- *  1. requireAdmin() — valida sessão SSR + is_admin = true
- *  2. createAdminClient() (service_role) — bypassa RLS
- *  3. DELETE em cascade para inscricoes, matches, teams, fases, etc.
+ * Usa service_role para bypassar RLS e garantir ON DELETE CASCADE.
  */
 export async function deleteTournament(id: string): Promise<{ success: true } | { error: string }> {
   try {
     await requireAdmin();
-
     const adminClient = createAdminClient();
-    const { error } = await adminClient
-      .from("tournaments")
-      .delete()
-      .eq("id", id);
-
+    const { error } = await adminClient.from("tournaments").delete().eq("id", id);
     if (error) return { error: error.message };
-
     revalidatePath("/admin/tournaments");
     revalidatePath("/torneios");
     return { success: true };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Erro ao deletar torneio" };
+  }
+}
+
+/**
+ * deleteOwnTournament — Organizador deletando o próprio torneio.
+ * Só permite deletar torneios DRAFT ou CANCELLED do próprio usuário.
+ * Usa RLS via anon client (organizer_id = auth.uid()).
+ */
+export async function deleteOwnTournament(id: string): Promise<{ success: true } | { error: string }> {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: 'Não autenticado' };
+
+    // Garante que o torneio é DRAFT ou CANCELLED antes de deletar
+    const { data: t } = await supabase
+      .from('tournaments')
+      .select('id, status, organizer_id')
+      .eq('id', id)
+      .eq('organizer_id', user.id)
+      .single();
+
+    if (!t) return { error: 'Torneio não encontrado ou sem permissão.' };
+
+    const status = t.status?.toUpperCase() ?? '';
+    if (status !== 'DRAFT' && status !== 'CANCELLED') {
+      return { error: 'Apenas torneios em Rascunho ou Cancelado podem ser deletados pelo organizador.' };
+    }
+
+    const { error } = await supabase.from('tournaments').delete().eq('id', id);
+    if (error) return { error: error.message };
+
+    revalidatePath('/torneios');
+    revalidatePath('/organizador');
+    redirect('/torneios');
+  } catch (e: unknown) {
+    // redirect() lança internamente — precisa re-throw
+    if (e instanceof Error && e.message === 'NEXT_REDIRECT') throw e;
+    return { error: e instanceof Error ? e.message : 'Erro ao deletar torneio' };
   }
 }
