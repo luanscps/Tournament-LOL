@@ -24,8 +24,16 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   const pathname = request.nextUrl.pathname;
 
-  // Redireciona anônimos para /login
-  const protectedRoutes = ['/dashboard', '/admin', '/torneios/inscrever'];
+  // Rotas que exigem autenticação.
+  // Verificação de role (admin/organizer) permanece nos layouts e Server Actions.
+  const protectedRoutes = [
+    '/dashboard',
+    '/admin',
+    '/organizador',
+    '/profile',
+    '/torneios/inscrever',
+  ];
+
   const isProtected = protectedRoutes.some((r) => pathname.startsWith(r));
 
   if (isProtected && !user) {
@@ -40,6 +48,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)/', // Linha corrigida
+    '/((?!_next/static|_next/image|favicon.ico|api/riot-callback|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)/',
   ],
 };
