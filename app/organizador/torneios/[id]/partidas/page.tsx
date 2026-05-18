@@ -31,8 +31,8 @@ export default async function PartidasPage({ params }: { params: Promise<{ id: s
   const { data: partidas } = await supabase
     .from('matches')
     .select(`
-      id, round, match_number, status, score_a, score_b,
-      scheduled_at, finished_at, best_of, fase_id,
+      id, round, match_number, match_order, status, score_a, score_b,
+      scheduled_at, finished_at, best_of, stage_id,
       team_a:teams!team_a_id(id, name, tag, logo_url),
       team_b:teams!team_b_id(id, name, tag, logo_url),
       winner:teams!winner_id(id, name, tag)
@@ -42,12 +42,11 @@ export default async function PartidasPage({ params }: { params: Promise<{ id: s
     .order('match_number')
 
   const { data: fases } = await supabase
-    .from('fases')
-    .select('id, name, type, order, status, best_of')
+    .from('tournament_stages')
+    .select('id, name, bracket_type, stage_order, status, best_of')
     .eq('tournament_id', id)
-    .order('order')
+    .order('stage_order')
 
-  // Times aprovados para criar partida manual
   const { data: timesAprovados } = await supabase
     .from('inscricoes')
     .select('team_id, teams:team_id(id, name, tag)')

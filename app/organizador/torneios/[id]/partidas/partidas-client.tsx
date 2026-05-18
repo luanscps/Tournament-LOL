@@ -5,13 +5,22 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: 'Agendada', ongoing: 'Ao vivo', finished: 'Finalizada', cancelled: 'Cancelada'
+  SCHEDULED:   'Agendada',
+  IN_PROGRESS: 'Ao vivo',
+  FINISHED:    'Finalizada',
+  pending:     'Agendada',
+  ongoing:     'Ao vivo',
+  finished:    'Finalizada',
+  cancelled:   'Cancelada',
 }
 const STATUS_COLOR: Record<string, string> = {
-  pending:   'text-gray-400 bg-gray-800/40 border-gray-700/40',
-  ongoing:   'text-yellow-400 bg-yellow-900/20 border-yellow-700/40',
-  finished:  'text-green-400 bg-green-900/20 border-green-700/40',
-  cancelled: 'text-red-400 bg-red-900/20 border-red-700/40',
+  SCHEDULED:   'text-gray-400 bg-gray-800/40 border-gray-700/40',
+  IN_PROGRESS: 'text-yellow-400 bg-yellow-900/20 border-yellow-700/40',
+  FINISHED:    'text-green-400 bg-green-900/20 border-green-700/40',
+  pending:     'text-gray-400 bg-gray-800/40 border-gray-700/40',
+  ongoing:     'text-yellow-400 bg-yellow-900/20 border-yellow-700/40',
+  finished:    'text-green-400 bg-green-900/20 border-green-700/40',
+  cancelled:   'text-red-400 bg-red-900/20 border-red-700/40',
 }
 
 export default function PartidasClient({
@@ -74,7 +83,7 @@ export default function PartidasClient({
     fd.append('round', String(newRound))
     fd.append('match_number', String(newMatchNum))
     fd.append('best_of', String(newBestOf))
-    if (newFaseId) fd.append('fase_id', newFaseId)
+    if (newFaseId) fd.append('fase_id', newFaseId)  // partida.ts mapeia fase_id -> stage_id no INSERT
     if (newScheduled) fd.append('scheduled_at', new Date(newScheduled).toISOString())
     startTransition(async () => {
       const res = await createPartida(torneio.id, fd)
@@ -124,7 +133,7 @@ export default function PartidasClient({
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">⚔️ Partidas — {torneio.name}</h1>
-          <p className="text-gray-400 text-sm mt-0.5">{partidas.length} partida{partidas.length !== 1 ? 's' : ''} · {partidas.filter(p => p.status === 'finished').length} finalizada{partidas.filter(p => p.status === 'finished').length !== 1 ? 's' : ''}</p>
+          <p className="text-gray-400 text-sm mt-0.5">{partidas.length} partida{partidas.length !== 1 ? 's' : ''} · {partidas.filter(p => ['finished','FINISHED'].includes(p.status)).length} finalizada{partidas.filter(p => ['finished','FINISHED'].includes(p.status)).length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-3">
           <Link href={`/organizador/torneios/${torneio.id}/fases`} className="btn-outline-gold text-sm px-4 py-2">🏗️ Fases</Link>
@@ -212,12 +221,17 @@ export default function PartidasClient({
       )}
 
       {/* Lista agrupada por round */}
-      {Object.entries(porRound).map(([round, matches]) => (
+      {Object.entries(porRound)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([round, matches]) => (
         <section key={round}>
           <h2 className="text-gray-400 font-semibold text-sm uppercase tracking-wider mb-3">Round {round}</h2>
           <div className="space-y-3">
-            {matches.map((p) => {
-              const fase = fases.find(f => f.id === p.fase_id)
+            {matches
+              .sort((a, b) => (a.match_number ?? a.match_order ?? 0) - (b.match_number ?? b.match_order ?? 0))
+              .map((p) => {
+              // fix: usa stage_id (nome real da coluna no banco)
+              const fase = fases.find(f => f.id === p.stage_id)
               return (
                 <div key={p.id} className="card-lol">
                   <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -225,17 +239,20 @@ export default function PartidasClient({
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="text-right flex-1">
                         <p className={`font-bold ${ p.winner?.id === p.team_a?.id ? 'text-[#C8A84B]' : 'text-white' }`}>
-                          [{p.team_a?.tag}] {p.team_a?.name}
+                          [{p.team_a?.tag}] {p.team_a?.name ?? 'TBD'}
+                          {p.winner?.id === p.team_a?.id && ' 🏆'}
                         </p>
                       </div>
                       <div className="text-center">
-                        {p.status === 'finished'
+                        {['finished','FINISHED'].includes(p.status)
                           ? <span className="text-white font-bold text-lg">{p.score_a} × {p.score_b}</span>
                           : <span className="text-gray-500 text-sm">VS</span>}
+                        {p.best_of > 1 && <p className="text-gray-600 text-xs">MD{p.best_of}</p>}
                       </div>
                       <div className="flex-1">
                         <p className={`font-bold ${ p.winner?.id === p.team_b?.id ? 'text-[#C8A84B]' : 'text-white' }`}>
-                          [{p.team_b?.tag}] {p.team_b?.name}
+                          [{p.team_b?.tag}] {p.team_b?.name ?? 'TBD'}
+                          {p.winner?.id === p.team_b?.id && ' 🏆'}
                         </p>
                       </div>
                     </div>
@@ -247,15 +264,15 @@ export default function PartidasClient({
                           {STATUS_LABEL[p.status] ?? p.status}
                         </span>
                         {fase && <p className="text-gray-500 text-xs mt-0.5">{fase.name}</p>}
-                        {p.scheduled_at && p.status !== 'finished' && (
+                        {p.scheduled_at && !['finished','FINISHED'].includes(p.status) && (
                           <p className="text-gray-500 text-xs">{new Date(p.scheduled_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</p>
                         )}
                       </div>
-                      {p.status !== 'finished' && (
+                      {!['finished','FINISHED'].includes(p.status) && (
                         <button onClick={() => openEdit(p)}
                           className="btn-gold text-xs px-3 py-1.5">📝 Resultado</button>
                       )}
-                      {p.status !== 'finished' && (
+                      {!['finished','FINISHED'].includes(p.status) && (
                         <button onClick={() => handleDelete(p.id)} disabled={isPending}
                           className="bg-red-900/30 hover:bg-red-800/40 text-red-400 border border-red-700/40 rounded-lg text-xs px-2.5 py-1.5 transition-colors">🗑</button>
                       )}
