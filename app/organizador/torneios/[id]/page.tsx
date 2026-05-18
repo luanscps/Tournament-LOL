@@ -1,301 +1,153 @@
-'use client'
-import { useEffect, useState, useMemo } from 'react'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+// app/organizador/torneios/[id]/page.tsx — Painel do Torneio (visão geral)
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
-// Status que permitem ao organizador cancelar o torneio.
-// Torneios IN_PROGRESS ou FINISHED não podem ser cancelados diretamente.
-const CANCELABLE_STATUS = ['DRAFT', 'OPEN']
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: 'Rascunho', OPEN: 'Inscrições Abertas',
+  IN_PROGRESS: 'Em Andamento', FINISHED: 'Finalizado', CANCELLED: 'Cancelado',
+}
+const STATUS_COLOR: Record<string, string> = {
+  DRAFT: 'bg-gray-700/50 text-gray-300 border-gray-600/40',
+  OPEN: 'bg-green-900/30 text-green-400 border-green-600/40',
+  IN_PROGRESS: 'bg-yellow-900/30 text-yellow-400 border-yellow-600/40',
+  FINISHED: 'bg-blue-900/30 text-blue-400 border-blue-600/40',
+  CANCELLED: 'bg-red-900/30 text-red-400 border-red-600/40',
+}
 
-// Apenas torneios em DRAFT sem inscrições aprovadas podem ser deletados permanentemente.
-const DELETABLE_STATUS = ['DRAFT']
+export default async function TorneioPainelPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createClient()
 
-export default function EditarTorneiPage() {
-  const router = useRouter()
-  const params = useParams()
-  const searchParams = useSearchParams()
-  const supabase = useMemo(() => createClient(), [])
-  const id = params.id as string
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteAction, setDeleteAction] = useState<'cancel' | 'delete'>('cancel')
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(searchParams.get('criado') === 'true')
+  const { data: torneio } = await supabase
+    .from('tournaments')
+    .select('id, name, slug, status, max_teams, start_date, end_date, description, min_members, max_members, prize_pool')
+    .eq('id', id)
+    .eq('organizer_id', user.id)
+    .single()
 
-  const [nome, setNome] = useState('')
-  const [descricao, setDescricao] = useState('')
-  const [slug, setSlug] = useState('')
-  const [rules, setRules] = useState('')
-  const [status, setStatus] = useState('DRAFT')
-  const [maxTeams, setMaxTeams] = useState(8)
-  const [minMembers, setMinMembers] = useState(6)
-  const [maxMembers, setMaxMembers] = useState(10)
-  const [prizePool, setPrizePool] = useState('')
-  const [startsAt, setStartsAt] = useState('')
-  const [endsAt, setEndsAt] = useState('')
-  const [hasEnrollments, setHasEnrollments] = useState(false)
+  if (!torneio) redirect('/organizador')
 
-  useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+  // Contadores via inscricoes (tabela correta do schema)
+  const { count: totalInscritos } = await supabase
+    .from('inscricoes')
+    .select('id', { count: 'exact', head: true })
+    .eq('tournament_id', id)
 
-      const { data } = await supabase
-        .from('tournaments')
-        .select('*')
-        .eq('id', id)
-        .eq('organizer_id', user.id) // garante que só o dono acessa
-        .single()
+  const { count: pendentes } = await supabase
+    .from('inscricoes')
+    .select('id', { count: 'exact', head: true })
+    .eq('tournament_id', id)
+    .eq('status', 'PENDING')
 
-      if (!data) { router.push('/organizador'); return }
+  const { count: aprovados } = await supabase
+    .from('inscricoes')
+    .select('id', { count: 'exact', head: true })
+    .eq('tournament_id', id)
+    .eq('status', 'APPROVED')
 
-      setNome(data.name ?? '')
-      setDescricao(data.description ?? '')
-      setSlug(data.slug ?? '')
-      setRules(data.rules ?? '')
-      setStatus(data.status ?? 'DRAFT')
-      setMaxTeams(data.max_teams ?? 8)
-      setMinMembers(data.min_members ?? 6)
-      setMaxMembers(data.max_members ?? 10)
-      setPrizePool(data.prize_pool ?? '')
-      setStartsAt(data.start_date ? data.start_date.slice(0, 16) : '')
-      setEndsAt(data.end_date ? data.end_date.slice(0, 16) : '')
+  const statusClass = STATUS_COLOR[torneio.status] ?? STATUS_COLOR.DRAFT
 
-      // Verifica inscrições aprovadas — impede delete permanente se existirem
-      const { count } = await supabase
-        .from('tournament_registrations')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', id)
-        .eq('status', 'APPROVED')
-
-      setHasEnrollments((count ?? 0) > 0)
-      setLoading(false)
-    }
-    load()
-  }, [id, supabase, router])
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault()
-    setSaving(true); setError(''); setSuccess(false)
-    const { error: err } = await supabase.from('tournaments').update({
-      name: nome.trim(),
-      description: descricao.trim() || null,
-      slug: slug.trim(),
-      rules: rules.trim(),
-      status,
-      max_teams: maxTeams,
-      min_members: minMembers,
-      max_members: maxMembers,
-      prize_pool: prizePool.trim() || null,
-      start_date: startsAt || null,
-      end_date: endsAt || null,
-    }).eq('id', id)
-    setSaving(false)
-    if (err) setError(err.message)
-    else setSuccess(true)
-  }
-
-  async function handleConfirmDelete() {
-    setDeleting(true)
-    setError('')
-    try {
-      if (deleteAction === 'delete') {
-        // Hard-delete — só DRAFT sem inscrições aprovadas
-        const { error: err } = await supabase
-          .from('tournaments')
-          .delete()
-          .eq('id', id)
-        if (err) throw new Error(err.message)
-        router.push('/organizador?deletado=true')
-      } else {
-        // Soft-delete — muda status para CANCELLED
-        const { error: err } = await supabase
-          .from('tournaments')
-          .update({ status: 'CANCELLED' })
-          .eq('id', id)
-        if (err) throw new Error(err.message)
-        setStatus('CANCELLED')
-        setShowDeleteModal(false)
-        setSuccess(true)
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erro ao processar ação')
-      setShowDeleteModal(false)
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  function openModal(action: 'cancel' | 'delete') {
-    setDeleteAction(action)
-    setShowDeleteModal(true)
-  }
-
-  const canCancel = CANCELABLE_STATUS.includes(status)
-  const canDelete = DELETABLE_STATUS.includes(status) && !hasEnrollments
-  const isCancelled = status === 'CANCELLED'
-
-  if (loading) return <div className="card-lol py-16 text-center"><p className="text-gray-400">Carregando...</p></div>
+  const navCards = [
+    { href: `/organizador/torneios/${id}/editar`,     emoji: '✏️',  label: 'Editar',    desc: 'Dados, regras e status' },
+    { href: `/organizador/torneios/${id}/inscricoes`, emoji: '📋',  label: 'Inscrições', desc: `${pendentes ?? 0} pendente(s)` },
+    { href: `/organizador/torneios/${id}/checkin`,    emoji: '✅',  label: 'Check-in',  desc: 'Confirmar presença' },
+    { href: `/organizador/torneios/${id}/fases`,      emoji: '🏗️', label: 'Fases',     desc: 'Bracket e grupos' },
+    { href: `/organizador/torneios/${id}/partidas`,   emoji: '⚔️',  label: 'Partidas',  desc: 'Acompanhar jogos' },
+  ]
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
 
-      {/* Modal de confirmação cancelar/deletar */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#0A1628] border border-[#1E3A5F] rounded-2xl p-6 max-w-sm w-full mx-4 space-y-4">
-            <h2 className="text-white font-bold text-lg">
-              {deleteAction === 'delete' ? '🗑️ Deletar torneio?' : '⚠️ Cancelar torneio?'}
-            </h2>
-            <p className="text-gray-400 text-sm">
-              {deleteAction === 'delete'
-                ? 'O torneio será permanentemente removido. Esta ação não pode ser desfeita.'
-                : 'O torneio será marcado como CANCELADO. Os participantes serão notificados e você liberará uma vaga para criar um novo torneio.'}
+      {/* Breadcrumb */}
+      <nav className="text-xs text-gray-500 flex items-center gap-2">
+        <Link href="/organizador" className="hover:text-[#C8A84B] transition-colors">Meus Torneios</Link>
+        <span>/</span>
+        <span className="text-gray-400">{torneio.name}</span>
+      </nav>
+
+      {/* Header */}
+      <div className="card-lol space-y-3">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-black text-white leading-tight">{torneio.name}</h1>
+            <p className="text-gray-500 text-sm mt-0.5">/{torneio.slug}</p>
+          </div>
+          <span className={`text-xs font-black uppercase px-3 py-1.5 rounded-full border ${statusClass}`}>
+            {STATUS_LABEL[torneio.status] ?? torneio.status}
+          </span>
+        </div>
+
+        {torneio.description && (
+          <p className="text-gray-400 text-sm">{torneio.description}</p>
+        )}
+
+        {/* Métricas rápidas */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          <div className="bg-[#0A1628] rounded-xl p-3 text-center">
+            <p className="text-2xl font-black text-white">{aprovados ?? 0}</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">Times aprovados</p>
+          </div>
+          <div className="bg-[#0A1628] rounded-xl p-3 text-center">
+            <p className="text-2xl font-black text-white">{torneio.max_teams}</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">Vagas totais</p>
+          </div>
+          <div className="bg-[#0A1628] rounded-xl p-3 text-center">
+            <p className={`text-2xl font-black ${(pendentes ?? 0) > 0 ? 'text-yellow-400' : 'text-white'}`}>
+              {pendentes ?? 0}
             </p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                disabled={deleting}
-                className="btn-outline-gold flex-1 py-2.5 text-sm"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                disabled={deleting}
-                className="flex-1 py-2.5 text-sm font-semibold rounded-lg bg-red-700 hover:bg-red-600 text-white transition-colors disabled:opacity-50"
-              >
-                {deleting ? 'Aguarde...' : deleteAction === 'delete' ? 'Sim, deletar' : 'Sim, cancelar'}
-              </button>
-            </div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">Pendentes</p>
+          </div>
+          <div className="bg-[#0A1628] rounded-xl p-3 text-center">
+            <p className="text-2xl font-black text-white">{totalInscritos ?? 0}</p>
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">Total inscritos</p>
           </div>
         </div>
-      )}
 
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl font-bold text-white">✏️ Editar Torneio</h1>
-        <div className="flex gap-2 flex-wrap">
-          <a href={`/organizador/torneios/${id}/inscricoes`} className="btn-outline-gold text-sm px-3 py-2">📋 Inscrições</a>
-          <a href={`/organizador/torneios/${id}/fases`} className="btn-outline-gold text-sm px-3 py-2">🏗️ Fases</a>
-          <a href={`/organizador/torneios/${id}/partidas`} className="btn-outline-gold text-sm px-3 py-2">⚔️ Partidas</a>
-          <a href={`/torneios/${slug || id}`} target="_blank" className="text-gray-400 hover:text-white text-sm py-2">Ver página →</a>
-        </div>
+        {/* Datas */}
+        {(torneio.start_date || torneio.end_date) && (
+          <div className="flex gap-4 text-xs text-gray-400 pt-1">
+            {torneio.start_date && (
+              <span>📅 Início: <strong className="text-gray-300">{new Date(torneio.start_date).toLocaleDateString('pt-BR', { dateStyle: 'short' })}</strong></span>
+            )}
+            {torneio.end_date && (
+              <span>🏁 Término: <strong className="text-gray-300">{new Date(torneio.end_date).toLocaleDateString('pt-BR', { dateStyle: 'short' })}</strong></span>
+            )}
+            {torneio.prize_pool && (
+              <span>🏅 Prêmio: <strong className="text-gray-300">{torneio.prize_pool}</strong></span>
+            )}
+          </div>
+        )}
       </div>
 
-      {success && (
-        <div className="bg-green-900/30 border border-green-600/40 rounded-xl px-5 py-3">
-          <p className="text-green-400 text-sm">
-            {searchParams.get('criado') === 'true'
-              ? '🎉 Torneio criado com sucesso! Configure as informações abaixo.'
-              : '✅ Torneio salvo com sucesso!'}
-          </p>
-        </div>
-      )}
+      {/* Cards de navegação */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {navCards.map((card) => (
+          <Link
+            key={card.href}
+            href={card.href}
+            className="card-lol flex flex-col items-center text-center gap-2 py-5 px-3 hover:border-[#C8A84B]/50 hover:bg-[#C8A84B]/5 transition-all group"
+          >
+            <span className="text-3xl">{card.emoji}</span>
+            <span className="text-white text-sm font-bold group-hover:text-[#C8A84B] transition-colors">{card.label}</span>
+            <span className="text-gray-500 text-[10px] leading-tight">{card.desc}</span>
+          </Link>
+        ))}
+      </div>
 
-      {isCancelled && (
-        <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl px-5 py-3">
-          <p className="text-yellow-400 text-sm">⚠️ Este torneio está <strong>CANCELADO</strong>. Não é possível editá-lo.</p>
-        </div>
-      )}
-
-      <form onSubmit={handleSave} className="card-lol space-y-5">
-        <div><label className="block text-gray-400 text-sm mb-1">Nome</label>
-          <input value={nome} onChange={e => setNome(e.target.value)} className="input-lol w-full" maxLength={80} required disabled={isCancelled} /></div>
-
-        <div><label className="block text-gray-400 text-sm mb-1">Slug</label>
-          <input value={slug} onChange={e => setSlug(e.target.value)} className="input-lol w-full" maxLength={60} disabled={isCancelled} /></div>
-
-        <div><label className="block text-gray-400 text-sm mb-1">Status</label>
-          <select value={status} onChange={e => setStatus(e.target.value)} className="input-lol w-full" disabled={isCancelled}>
-            <option value="DRAFT">Rascunho</option>
-            <option value="OPEN">Inscrições Abertas</option>
-            <option value="IN_PROGRESS">Em Andamento</option>
-            <option value="FINISHED">Finalizado</option>
-            <option value="CANCELLED">Cancelado</option>
-          </select></div>
-
-        <div><label className="block text-gray-400 text-sm mb-1">Descrição</label>
-          <textarea value={descricao} onChange={e => setDescricao(e.target.value)} className="input-lol w-full min-h-[80px] resize-y text-sm" maxLength={500} disabled={isCancelled} /></div>
-
-        <div><label className="block text-gray-400 text-sm mb-1">Regras do Torneio</label>
-          <textarea value={rules} onChange={e => setRules(e.target.value)} className="input-lol w-full min-h-[140px] resize-y text-sm" maxLength={3000} disabled={isCancelled} /></div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div><label className="block text-gray-400 text-sm mb-1">Máx. Times</label>
-            <input type="number" min={2} max={64} value={maxTeams} onChange={e => setMaxTeams(+e.target.value)} className="input-lol w-full" disabled={isCancelled} /></div>
-          <div><label className="block text-gray-400 text-sm mb-1">Mín. Membros</label>
-            <input type="number" min={1} max={maxMembers} value={minMembers} onChange={e => setMinMembers(+e.target.value)} className="input-lol w-full" disabled={isCancelled} /></div>
-          <div><label className="block text-gray-400 text-sm mb-1">Máx. Membros</label>
-            <input type="number" min={minMembers} max={20} value={maxMembers} onChange={e => setMaxMembers(+e.target.value)} className="input-lol w-full" disabled={isCancelled} /></div>
-          <div><label className="block text-gray-400 text-sm mb-1">Prêmio</label>
-            <input value={prizePool} onChange={e => setPrizePool(e.target.value)} className="input-lol w-full" maxLength={100} disabled={isCancelled} /></div>
-          <div><label className="block text-gray-400 text-sm mb-1">Início</label>
-            <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)} className="input-lol w-full" disabled={isCancelled} /></div>
-          <div><label className="block text-gray-400 text-sm mb-1">Término</label>
-            <input type="datetime-local" value={endsAt} onChange={e => setEndsAt(e.target.value)} className="input-lol w-full" disabled={isCancelled} /></div>
-        </div>
-
-        {error && <div className="bg-red-900/30 border border-red-500/40 rounded p-3"><p className="text-red-400 text-sm">{error}</p></div>}
-
-        <div className="flex gap-3 pt-2">
-          <button type="button" onClick={() => router.push('/organizador')} className="btn-outline-gold flex-1 py-3">← Voltar</button>
-          {!isCancelled && (
-            <button type="submit" disabled={saving} className="btn-gold flex-1 py-3">{saving ? 'Salvando...' : '💾 Salvar Alterações'}</button>
-          )}
-        </div>
-      </form>
-
-      {/* Zona de perigo — cancelar ou deletar */}
-      {(canCancel || canDelete) && (
-        <div className="card-lol border border-red-900/40 space-y-4">
-          <div>
-            <h3 className="text-red-400 font-semibold text-sm">⚠️ Zona de Perigo</h3>
-            <p className="text-gray-500 text-xs mt-1">Ações irreversíveis ou de alto impacto para o torneio.</p>
-          </div>
-
-          <div className="space-y-3">
-            {canCancel && (
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <p className="text-gray-300 text-sm font-medium">Cancelar torneio</p>
-                  <p className="text-gray-500 text-xs">
-                    Muda o status para CANCELADO. Libera uma vaga de torneio ativo para você.
-                    {hasEnrollments && ' Times inscritos serão notificados.'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openModal('cancel')}
-                  className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg border border-red-700 text-red-400 hover:bg-red-900/30 transition-colors"
-                >
-                  Cancelar torneio
-                </button>
-              </div>
-            )}
-
-            {canDelete && (
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <p className="text-gray-300 text-sm font-medium">Deletar permanentemente</p>
-                  <p className="text-gray-500 text-xs">
-                    Remove o torneio do banco de dados. Disponível apenas para rascunhos sem inscrições aprovadas.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openModal('delete')}
-                  className="shrink-0 px-4 py-2 text-sm font-semibold rounded-lg bg-red-900/40 border border-red-700 text-red-300 hover:bg-red-800/50 transition-colors"
-                >
-                  🗑️ Deletar
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Link para página pública */}
+      <div className="text-center">
+        <Link
+          href={`/torneios/${torneio.slug ?? id}`}
+          target="_blank"
+          className="text-sm text-gray-500 hover:text-[#C8A84B] transition-colors"
+        >
+          Ver página pública do torneio →
+        </Link>
+      </div>
     </div>
   )
 }
