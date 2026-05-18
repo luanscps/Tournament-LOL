@@ -2,6 +2,7 @@
 import { requireTournamentOrganizerOrAdmin } from '@/lib/supabase/permissions';
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { avancarVencedor } from "@/lib/bracket-utils";
 
 const ResultSchema = z.object({
   winner_team_id: z.string().uuid(),
@@ -19,39 +20,6 @@ const CreatePartidaSchema = z.object({
   fase_id:      z.string().uuid().optional(),
   best_of:      z.coerce.number().min(1).max(7).default(1),
 });
-
-/** Avança o vencedor para a próxima partida do bracket (eliminatório simples) */
-async function avancarVencedor(supabase: any, match: any, winnerId: string) {
-  const { round, match_number, tournament_id } = match;
-  const proximoRound       = round + 1;
-  const proximaPartidaNum  = Math.ceil(match_number / 2);
-
-  const { data: proximaPartida } = await supabase
-    .from("matches")
-    .select("id, team_a_id, team_b_id")
-    .eq("tournament_id", tournament_id)
-    .eq("round", proximoRound)
-    .eq("match_number", proximaPartidaNum)
-    .maybeSingle();
-
-  if (proximaPartida) {
-    const update = proximaPartida.team_a_id == null
-      ? { team_a_id: winnerId }
-      : { team_b_id: winnerId };
-    await supabase.from("matches").update(update).eq("id", proximaPartida.id);
-  } else {
-    const isSlotA = match_number % 2 !== 0;
-    await supabase.from("matches").insert({
-      tournament_id,
-      team_a_id:  isSlotA ? winnerId : null,
-      team_b_id:  isSlotA ? null : winnerId,
-      round:      proximoRound,
-      match_number: proximaPartidaNum,
-      best_of:    match.best_of ?? 1,
-      status:     "SCHEDULED",
-    });
-  }
-}
 
 export async function editarResultadoPartida(
   matchDbId: string,
@@ -96,6 +64,7 @@ export async function updateResultadoPartida(
 
     if (error) return { error: error.message };
 
+    // Avança vencedor para próxima rodada (bracket-utils compartilhado)
     await avancarVencedor(supabase, match, winner_team_id);
 
     // picks_bans: campo JSONB dentro de match_games
@@ -252,6 +221,17 @@ export async function gerarChaveamento(tournamentId: string, faseId?: string) {
   try {
     const { supabase } = await requireTournamentOrganizerOrAdmin(tournamentId);
 
+    // Lê best_of da fase se faseId fornecido — suporta Bo1/Bo3/Bo5 por fase
+    let stageBestOf = 1;
+    if (faseId) {
+      const { data: stage } = await supabase
+        .from("tournament_stages")
+        .select("best_of")
+        .eq("id", faseId)
+        .single();
+      stageBestOf = stage?.best_of ?? 1;
+    }
+
     const { data: inscricoes, error: errInsc } = await supabase
       .from("inscricoes")
       .select("team_id, teams(id, name, tag)")
@@ -263,8 +243,8 @@ export async function gerarChaveamento(tournamentId: string, faseId?: string) {
       return { error: "É necessário pelo menos 2 times aprovados para gerar o chaveamento" };
     }
 
-    const times       = [...inscricoes].sort(() => Math.random() - 0.5);
-    const nextPow2    = Math.pow(2, Math.ceil(Math.log2(times.length)));
+    const times    = [...inscricoes].sort(() => Math.random() - 0.5);
+    const nextPow2 = Math.pow(2, Math.ceil(Math.log2(times.length)));
     const partidas: any[] = [];
 
     for (let i = 0; i < nextPow2 / 2; i++) {
@@ -277,7 +257,7 @@ export async function gerarChaveamento(tournamentId: string, faseId?: string) {
         team_b_id:     timeB.team_id,
         round:         1,
         match_number:  i + 1,
-        best_of:       1,
+        best_of:       stageBestOf,   // ← dinâmico: lido da fase
         stage_id:      faseId ?? null,
         status:        "SCHEDULED",
       });
