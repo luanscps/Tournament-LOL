@@ -61,7 +61,7 @@ export default function EditarTorneiPage() {
       setEndsAt(data.end_date ? data.end_date.slice(0, 16) : '')
 
       const { count } = await supabase
-        .from('tournament_registrations')
+        .from('inscricoes')
         .select('id', { count: 'exact', head: true })
         .eq('tournament_id', id)
         .eq('status', 'APPROVED')
