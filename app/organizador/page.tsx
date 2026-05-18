@@ -20,7 +20,8 @@ export default async function OrganizadorPage() {
   // Meus torneios (organizer_id = eu, ou created_by = eu)
   const { data: torneios } = await supabase
     .from('tournaments')
-    .select('id, name, slug, status, max_teams, starts_at, min_members, max_members')
+    // fix: campo correto é start_date, não starts_at
+    .select('id, name, slug, status, max_teams, start_date, min_members, max_members')
     .or(`organizer_id.eq.${user.id},created_by.eq.${user.id}`)
     .order('created_at', { ascending: false })
 
@@ -84,16 +85,18 @@ export default async function OrganizadorPage() {
                   {STATUS_LABEL[t.status] ?? t.status}
                 </span>
               </div>
-              {t.starts_at && (
+              {/* fix: campo correto é start_date */}
+              {t.start_date && (
                 <p className="text-gray-400 text-xs">
-                  Início: {new Date(t.starts_at).toLocaleDateString('pt-BR')}
+                  Início: {new Date(t.start_date).toLocaleDateString('pt-BR')}
                 </p>
               )}
               <p className="text-gray-500 text-xs">
                 Máx {t.max_teams} times · {t.min_members}–{t.max_members} membros/time
               </p>
               <div className="flex gap-2 pt-1">
-                <Link href={`/organizador/torneios/${t.id}`} className="btn-outline-gold text-xs py-1.5 flex-1 text-center">
+                {/* fix: link Editar aponta para rota canônica /editar */}
+                <Link href={`/organizador/torneios/${t.id}/editar`} className="btn-outline-gold text-xs py-1.5 flex-1 text-center">
                   Editar
                 </Link>
                 <Link href={`/organizador/torneios/${t.id}/inscricoes`} className="btn-outline-gold text-xs py-1.5 flex-1 text-center">

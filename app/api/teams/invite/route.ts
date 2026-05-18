@@ -1,116 +1,137 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
 
-// POST /api/teams/invite — capitão envia convite
+const bodySchema = z.object({
+  team_id: z.string().uuid(),
+  invited_profile_id: z.string().uuid(),
+  role: z.enum(['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT']).nullable().optional(),
+  is_reserve: z.boolean().optional().default(false),
+  message: z.string().max(300).optional(),
+})
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const body = await req.json()
-  const { team_id, invited_profile_id, is_reserve = false, message = '' } = body
-
-  if (!team_id || !invited_profile_id) {
-    return NextResponse.json({ error: 'team_id e invited_profile_id são obrigatórios' }, { status: 400 })
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   }
 
-  // Verifica se o user é capitão do time
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('team_role')
-    .eq('team_id', team_id)
-    .eq('profile_id', user.id)
-    .single()
-
-  if (!membership || membership.team_role !== 'captain') {
-    return NextResponse.json({ error: 'Apenas o capitão pode enviar convites' }, { status: 403 })
+  const body = await req.json().catch(() => null)
+  const parsed = bodySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  // Verifica limite de membros
-  const { count } = await supabase
-    .from('team_members')
-    .select('*', { count: 'exact', head: true })
-    .eq('team_id', team_id)
+  const { team_id, invited_profile_id, role, is_reserve, message } = parsed.data
 
-  if ((count ?? 0) >= 11) {
-    return NextResponse.json({ error: 'Time já atingiu o limite de 11 jogadores' }, { status: 400 })
+  // 1. Verifica se o caller é owner ou captain do time
+  const { data: team } = await supabase
+    .from('teams')
+    .select('id, name, owner_id')
+    .eq('id', team_id)
+    .maybeSingle()
+
+  if (!team) {
+    return NextResponse.json({ error: 'Time não encontrado' }, { status: 404 })
   }
 
-  // Verifica limite específico titular/reserva
-  if (!is_reserve) {
-    const { count: titulares } = await supabase
+  const isOwner = team.owner_id === user.id
+
+  let isCaptain = false
+  if (!isOwner) {
+    const { data: membership } = await supabase
       .from('team_members')
-      .select('*', { count: 'exact', head: true })
+      .select('team_role, status')
       .eq('team_id', team_id)
-      .eq('is_reserve', false)
-    if ((titulares ?? 0) >= 5) {
-      return NextResponse.json({ error: 'Já existem 5 titulares. Convide como reserva.' }, { status: 400 })
-    }
-  } else {
-    const { count: reservas } = await supabase
-      .from('team_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('team_id', team_id)
-      .eq('is_reserve', true)
-    if ((reservas ?? 0) >= 6) {
-      return NextResponse.json({ error: 'Já existem 6 reservas.' }, { status: 400 })
-    }
+      .eq('profile_id', user.id)
+      .eq('status', 'accepted')
+      .maybeSingle()
+    isCaptain = membership?.team_role === 'captain'
   }
 
-  // Verifica se já existe convite pendente
-  const { data: existing } = await supabase
+  if (!isOwner && !isCaptain) {
+    return NextResponse.json(
+      { error: 'Apenas o dono ou capitão do time pode convidar membros' },
+      { status: 403 }
+    )
+  }
+
+  // 2. Verifica se o jogador já é membro ativo do time
+  const { data: existingMember } = await supabase
+    .from('team_members')
+    .select('id, status')
+    .eq('team_id', team_id)
+    .eq('profile_id', invited_profile_id)
+    .in('status', ['accepted', 'pending'])
+    .maybeSingle()
+
+  if (existingMember) {
+    const msg = existingMember.status === 'pending'
+      ? 'Este jogador já tem um convite pendente para este time'
+      : 'Este jogador já é membro deste time'
+    return NextResponse.json({ error: msg }, { status: 409 })
+  }
+
+  // 3. Verifica se já existe um team_invite pendente para este jogador neste time
+  const { data: existingInvite } = await supabase
     .from('team_invites')
     .select('id')
     .eq('team_id', team_id)
     .eq('invited_profile_id', invited_profile_id)
-    .eq('status', 'pending')
-    .single()
+    .eq('status', 'PENDING')
+    .maybeSingle()
 
-  if (existing) {
-    return NextResponse.json({ error: 'Já existe um convite pendente para este jogador' }, { status: 400 })
+  if (existingInvite) {
+    return NextResponse.json(
+      { error: 'Já existe um convite pendente para este jogador neste time' },
+      { status: 409 }
+    )
   }
 
-  const { data, error } = await supabase
+  // 4. Busca o riot_account primário do convidado para preencher summoner_name/tag_line
+  const { data: riotAccount } = await supabase
+    .from('riot_accounts')
+    .select('game_name, tag_line')
+    .eq('profile_id', invited_profile_id)
+    .eq('is_primary', true)
+    .maybeSingle()
+
+  // 5. Cria o convite com expiração de 7 dias
+  const expiresAt = new Date()
+  expiresAt.setDate(expiresAt.getDate() + 7)
+
+  const { data: invite, error: insertError } = await supabase
     .from('team_invites')
     .insert({
       team_id,
       invited_profile_id,
       invited_by: user.id,
-      is_reserve,
-      message,
+      role: role ?? null,
+      is_reserve: is_reserve ?? false,
+      message: message ?? null,
+      status: 'PENDING',
+      summoner_name: riotAccount?.game_name ?? null,
+      tag_line: riotAccount?.tag_line ?? null,
+      expires_at: expiresAt.toISOString(),
     })
-    .select()
+    .select('id')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (insertError) {
+    return NextResponse.json({ error: insertError.message }, { status: 500 })
+  }
 
-  return NextResponse.json({ invite: data }, { status: 201 })
-}
+  // 6. Cria notificação para o jogador convidado
+  await supabase.from('notifications').insert({
+    user_id: invited_profile_id,
+    title: `Convite de time: ${team.name}`,
+    body: message ?? `Você foi convidado para fazer parte do time ${team.name}.`,
+    type: 'team_invite',
+    link: `/meu-perfil/convites`,
+    metadata: { invite_id: invite.id, team_id, team_name: team.name },
+  })
 
-// GET /api/teams/invite — lista convites pendentes do usuário logado
-export async function GET() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-
-  const { data, error } = await supabase
-    .from('team_invites')
-    .select(`
-      id,
-      is_reserve,
-      message,
-      status,
-      created_at,
-      expires_at,
-      teams:team_id ( id, name, slug, tag, logo_url ),
-      inviter:invited_by ( id, username, riot_id_game_name, riot_id_tag_line, avatar_url )
-    `)
-    .eq('invited_profile_id', user.id)
-    .eq('status', 'pending')
-    .gt('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false })
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  return NextResponse.json({ invites: data })
+  return NextResponse.json({ invite_id: invite.id, message: 'Convite enviado com sucesso' }, { status: 201 })
 }

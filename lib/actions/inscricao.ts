@@ -1,6 +1,7 @@
 'use server';
 import { requireAuth, requireTournamentOrganizerOrAdmin } from '@/lib/supabase/permissions';
 import { revalidatePath } from 'next/cache';
+import { getPlatformUrl } from '@/lib/riot';
 
 // ─── ORGANIZER/ADMIN: Aprovar inscrição ───────────────────────────────────────
 export async function aprovarInscricao(teamId: string, tournamentId: string) {
@@ -83,31 +84,79 @@ export async function desfazerCheckin(inscricaoId: string) {
 // ─── ORGANIZER/ADMIN: Fazer check-in manual ──────────────────────────────────
 /**
  * Permite que o organizador ou admin faça check-in de um time manualmente.
- * Diferente de `fazerCheckin` (que exige ser o capitão do time),
- * esta action verifica apenas se o caller é organizador/admin do torneio.
  *
- * A validação de "jogador em partida" (spectator-v5) é feita no Client
- * antes desta action ser chamada (best-effort, não bloqueia aqui no servidor).
+ * SEGURANÇA EM DUAS CAMADAS:
+ * 1. Client (checkin-client.tsx): verifica spectator-v5 antes de chamar esta action (UX)
+ * 2. Server (esta função):        re-verifica spectator-v5 com os PUUIDs do time (fonte de verdade)
+ *
+ * A verificação server-side é best-effort:
+ * - Se a API da Riot estiver fora do ar → libera o check-in (não penaliza)
+ * - Se qualquer membro estiver em partida ativa → bloqueia com erro
+ *
+ * RLS: O UPDATE em inscricoes é permitido pela policy que usa
+ * requireTournamentOrganizerOrAdmin, que verifica organizer_id no torneio.
+ * Policy de banco: ver supabase/migrations/*_rls_inscricoes.sql
  */
 export async function fazerCheckinOrganizador(inscricaoId: string) {
   try {
     const { supabase, profile } = await requireAuth();
 
+    // 1. Busca inscrição + membros + PUUIDs
     const { data: insc, error: fetchErr } = await supabase
       .from('inscricoes')
-      .select('id, status, tournament_id')
+      .select(`
+        id, status, tournament_id,
+        teams (
+          team_members (
+            riot_account:riot_accounts ( puuid )
+          )
+        )
+      `)
       .eq('id', inscricaoId)
       .single();
 
     if (fetchErr || !insc) return { error: 'Inscrição não encontrada' };
 
-    // Verifica permissão agora que temos o tournament_id
+    // 2. Verifica permissão de organizer/admin
     await requireTournamentOrganizerOrAdmin(insc.tournament_id);
 
     if (insc.status !== 'APPROVED') {
       return { error: 'Inscrição precisa estar APROVADA para check-in' };
     }
 
+    // 3. [ITEM 2] Verificação Spectator-v5 server-side (segunda barreira)
+    const team = insc.teams as any;
+    if (team?.team_members?.length > 0) {
+      const puuids: string[] = team.team_members
+        .map((m: any) => m.riot_account?.puuid)
+        .filter((p: string | null): p is string => !!p);
+
+      if (puuids.length > 0) {
+        const RIOT_KEY = process.env.RIOT_API_KEY;
+        if (RIOT_KEY) {
+          const spectatorChecks = await Promise.allSettled(
+            puuids.map((puuid) =>
+              fetch(
+                `${getPlatformUrl()}/lol/spectator/v5/active-games/by-summoner/${puuid}`,
+                { headers: { 'X-Riot-Token': RIOT_KEY }, cache: 'no-store' }
+              ).then((r) => ({ puuid, inGame: r.status === 200 }))
+            )
+          );
+
+          const anyInGame = spectatorChecks.some(
+            (r) => r.status === 'fulfilled' && r.value.inGame
+          );
+
+          if (anyInGame) {
+            return {
+              error: '⚠️ Um ou mais membros do time estão em partida ativa. Aguarde o término.',
+            };
+          }
+        }
+      }
+    }
+
+    // 4. Aplica check-in
     const { error } = await supabase
       .from('inscricoes')
       .update({

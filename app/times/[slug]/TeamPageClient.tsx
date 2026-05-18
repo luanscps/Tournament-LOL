@@ -4,12 +4,19 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 
+// Valores em minúsculo para o <select> da UI
 const LANES = ['top', 'jungle', 'mid', 'adc', 'support', 'fill']
+
+// Aceita tanto minúsculo (UI) quanto maiúsculo (vindo do enum player_role do banco)
 const LANE_LABELS: Record<string, string> = {
-  top: 'Top', jungle: 'Jungle', mid: 'Mid', adc: 'ADC', support: 'Support', fill: 'Fill',
+  top: 'Top',     TOP: 'Top',
+  jungle: 'Jungle', JUNGLE: 'Jungle',
+  mid: 'Mid',     MID: 'Mid',
+  adc: 'ADC',     ADC: 'ADC',
+  support: 'Support', SUPPORT: 'Support',
+  fill: 'Fill',   FILL: 'Fill',
 }
 
-// Dados reais do banco: team_members → riot_accounts (game_name, tag_line)
 type RiotAccount = {
   id: string
   game_name: string
@@ -44,8 +51,12 @@ type Props = {
 export default function TeamPageClient({ team, currentUserId, captainProfileId, isCaptain }: Props) {
   const router = useRouter()
   const [laneEditing, setLaneEditing] = useState<string | null>(null)
+
+  // Normaliza lanes vindas do banco (uppercase) para minúsculo na UI
   const [laneValues, setLaneValues] = useState<Record<string, string>>(
-    Object.fromEntries(team.team_members.map(m => [m.profile_id, m.lane ?? '']))
+    Object.fromEntries(
+      team.team_members.map(m => [m.profile_id, m.lane ? m.lane.toLowerCase() : ''])
+    )
   )
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
@@ -59,6 +70,7 @@ export default function TeamPageClient({ team, currentUserId, captainProfileId, 
     const res = await fetch(`/api/teams/${team.id}/lane`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      // envia minúsculo — a route.ts converte para UPPERCASE antes de salvar
       body: JSON.stringify({ profile_id: profileId, lane: laneValues[profileId] }),
     })
     const json = await res.json()
@@ -95,7 +107,9 @@ export default function TeamPageClient({ team, currentUserId, captainProfileId, 
             <span className="text-gray-400 font-normal text-sm">{displayTag}</span>
           </p>
           {member.lane && (
-            <p className="text-blue-400 text-xs">{LANE_LABELS[member.lane] ?? member.lane}</p>
+            <p className="text-blue-400 text-xs">
+              {LANE_LABELS[member.lane] ?? LANE_LABELS[member.lane.toLowerCase()] ?? member.lane}
+            </p>
           )}
         </div>
 

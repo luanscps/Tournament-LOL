@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 
 type Params = { params: Promise<{ teamId: string }> }
 
+// Valores em minúsculo para validação do input (vem do select da UI)
 const VALID_LANES = ['top', 'jungle', 'mid', 'adc', 'support', 'fill', '']
 
 // PATCH /api/teams/[teamId]/lane — capitão define lane de um membro
@@ -18,12 +19,19 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: 'profile_id e lane são obrigatórios' }, { status: 400 })
   }
 
-  if (!VALID_LANES.includes(lane)) {
+  // Normaliza para minúsculo antes de validar (aceita tanto 'TOP' quanto 'top')
+  const laneNorm = typeof lane === 'string' ? lane.toLowerCase() : lane
+
+  if (!VALID_LANES.includes(laneNorm)) {
     return NextResponse.json(
       { error: `Lane inválida. Opções: ${VALID_LANES.filter(Boolean).join(', ')}` },
       { status: 400 }
     )
   }
+
+  // Converte para MAIÚSCULO — o enum player_role no banco exige uppercase
+  // ex: 'top' → 'TOP', '' → null (limpa a lane)
+  const laneValue = laneNorm === '' ? null : laneNorm.toUpperCase()
 
   // Verifica se o user é capitão do time
   const { data: captainCheck } = await supabase
@@ -39,11 +47,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { error } = await supabase
     .from('team_members')
-    .update({ lane })
+    .update({ lane: laneValue })
     .eq('team_id', teamId)
     .eq('profile_id', profile_id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ ok: true, lane })
+  return NextResponse.json({ ok: true, lane: laneValue })
 }
