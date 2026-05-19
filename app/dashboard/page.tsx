@@ -41,6 +41,7 @@ export default async function DashboardPage({
     { data: openTournaments },
     { data: riotAccount },
     { data: myOwnedTeams },
+    { count: unreadCount },
   ] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", user.id).single(),
     supabase
@@ -74,6 +75,10 @@ export default async function DashboardPage({
       )
       .eq("owner_id", user.id)
       .limit(10),
+    supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("is_read", false),
   ]);
 
   const ownedIds = (myOwnedTeams ?? [])
@@ -283,6 +288,77 @@ export default async function DashboardPage({
         </div>
         <Link href="/dashboard/jogador/registrar" className="btn-outline-gold text-sm text-center shrink-0">
           {riotAccount ? "🔄 Atualizar perfil Riot" : "🔗 Vincular conta Riot"}
+        </Link>
+      </div>
+
+      {/* ── Atalhos rápidos ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Meu Progresso */}
+        <Link
+          href="/dashboard/jogador/carreira"
+          className="group bg-[#0D1E35] border border-[#1E3A5F] hover:border-[#C8A84B]/60 rounded-xl p-4 flex flex-col items-center gap-2 transition-all hover:bg-[#0D1E35]/80"
+        >
+          <span className="text-2xl">📊</span>
+          <span className="text-white text-sm font-semibold group-hover:text-[#C8A84B] transition-colors text-center">
+            Meu Progresso
+          </span>
+          <span className="text-gray-500 text-xs text-center">Estatísticas por torneio</span>
+        </Link>
+
+        {/* Notificações com badge */}
+        <Link
+          href="/dashboard/jogador/notificacoes"
+          className="group relative bg-[#0D1E35] border border-[#1E3A5F] hover:border-[#C8A84B]/60 rounded-xl p-4 flex flex-col items-center gap-2 transition-all hover:bg-[#0D1E35]/80"
+        >
+          <span className="text-2xl relative">
+            🔔
+            {(unreadCount ?? 0) > 0 && (
+              <span
+                className="absolute -top-1.5 -right-2 bg-[#C8A84B] text-black text-[10px] font-extrabold leading-none rounded-full px-1.5 py-0.5"
+                aria-label={`${unreadCount} não lidas`}
+              >
+                {unreadCount! > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </span>
+          <span className="text-white text-sm font-semibold group-hover:text-[#C8A84B] transition-colors text-center">
+            Notificações
+          </span>
+          <span className="text-gray-500 text-xs text-center">
+            {(unreadCount ?? 0) > 0
+              ? `${unreadCount} não lida${unreadCount !== 1 ? "s" : ""}`
+              : "Tudo em dia"}
+          </span>
+        </Link>
+
+        {/* Explorar Torneios */}
+        <Link
+          href="/torneios"
+          className="group bg-[#0D1E35] border border-[#1E3A5F] hover:border-[#C8A84B]/60 rounded-xl p-4 flex flex-col items-center gap-2 transition-all hover:bg-[#0D1E35]/80"
+        >
+          <span className="text-2xl">🏆</span>
+          <span className="text-white text-sm font-semibold group-hover:text-[#C8A84B] transition-colors text-center">
+            Torneios
+          </span>
+          <span className="text-gray-500 text-xs text-center">Ver inscrições abertas</span>
+        </Link>
+
+        {/* Meu Time */}
+        <Link
+          href={myOwnedTeams && myOwnedTeams.length > 0
+            ? `/dashboard/times/${myOwnedTeams[0].id}`
+            : "/dashboard/times/criar"}
+          className="group bg-[#0D1E35] border border-[#1E3A5F] hover:border-[#C8A84B]/60 rounded-xl p-4 flex flex-col items-center gap-2 transition-all hover:bg-[#0D1E35]/80"
+        >
+          <span className="text-2xl">🛡️</span>
+          <span className="text-white text-sm font-semibold group-hover:text-[#C8A84B] transition-colors text-center">
+            {myOwnedTeams && myOwnedTeams.length > 0 ? "Meu Time" : "Criar Time"}
+          </span>
+          <span className="text-gray-500 text-xs text-center">
+            {myOwnedTeams && myOwnedTeams.length > 0
+              ? `[${myOwnedTeams[0].tag}] ${myOwnedTeams[0].name}`
+              : "Monte seu roster"}
+          </span>
         </Link>
       </div>
 
