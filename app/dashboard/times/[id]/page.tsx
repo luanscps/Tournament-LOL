@@ -15,7 +15,23 @@ const TIER_COLORS: Record<string, string> = {
   CHALLENGER: 'text-yellow-300', UNRANKED: 'text-gray-500',
 };
 
-// Fix 4: o jogador agora vem direto da tabela players via profile_id (sem depender de riot_accounts→players FK)
+const DISPUTE_STATUS_LABEL: Record<string, string> = {
+  PENDING: 'Pendente', REVIEWING: 'Em análise',
+  ACCEPTED: 'Aceita', REJECTED: 'Rejeitada',
+};
+const DISPUTE_STATUS_COLOR: Record<string, string> = {
+  PENDING:   'text-yellow-400 bg-yellow-400/10 border-yellow-500/30',
+  REVIEWING: 'text-blue-400 bg-blue-400/10 border-blue-500/30',
+  ACCEPTED:  'text-green-400 bg-green-400/10 border-green-500/30',
+  REJECTED:  'text-red-400 bg-red-400/10 border-red-500/30',
+};
+
+const INSC_STATUS_COLOR: Record<string, string> = {
+  PENDING:  'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
+  APPROVED: 'text-green-400 bg-green-400/10 border-green-400/30',
+  REJECTED: 'text-red-400 bg-red-400/10 border-red-400/30',
+};
+
 interface PlayerInfo {
   id: string;
   summoner_name: string | null;
@@ -49,7 +65,36 @@ interface Inscricao {
   checked_in: boolean;
   checked_in_at: string | null;
   tournament_id: string;
-  tournaments: { name: string; status: string } | null;
+  tournaments: { id: string; name: string; status: string } | null;
+}
+
+interface ProximaPartida {
+  id: string;
+  round: number;
+  match_number: number;
+  scheduled_at: string | null;
+  best_of: number;
+  team_a: { id: string; name: string; tag: string } | null;
+  team_b: { id: string; name: string; tag: string } | null;
+  tournament: { id: string; name: string; slug: string | null } | null;
+}
+
+interface Disputa {
+  id: string;
+  status: string;
+  reason: string;
+  evidence_url: string | null;
+  resolution_notes: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  match: {
+    id: string;
+    round: number;
+    match_number: number;
+    team_a: { name: string; tag: string } | null;
+    team_b: { name: string; tag: string } | null;
+  } | null;
+  tournament: { id: string; name: string; slug: string | null } | null;
 }
 
 interface Team {
@@ -68,19 +113,21 @@ export default function PainelCapitaoPage() {
   const router   = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const [team, setTeam]           = useState<Team | null>(null);
-  const [playerMap, setPlayerMap] = useState<Record<string, PlayerInfo>>({});
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState('');
-  const [savingLane, setSavingLane] = useState<string | null>(null);
-  const [savedLane, setSavedLane]   = useState<string | null>(null);
+  const [team, setTeam]                   = useState<Team | null>(null);
+  const [playerMap, setPlayerMap]         = useState<Record<string, PlayerInfo>>({});
+  const [proximasPartidas, setProximas]   = useState<ProximaPartida[]>([]);
+  const [disputas, setDisputas]           = useState<Disputa[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState('');
+  const [savingLane, setSavingLane]       = useState<string | null>(null);
+  const [savedLane, setSavedLane]         = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
 
-      // Fix 4a: select limpo — sem riot_accounts→players FK quebrada
+      // Time + roster + todas as inscrições (multi-torneio)
       const { data, error: err } = await supabase
         .from('teams')
         .select(`
@@ -91,7 +138,7 @@ export default function PainelCapitaoPage() {
           ),
           inscricoes (
             id, status, checked_in, checked_in_at, tournament_id,
-            tournaments ( name, status )
+            tournaments ( id, name, status )
           )
         `)
         .eq('id', teamId)
@@ -103,12 +150,11 @@ export default function PainelCapitaoPage() {
       const teamData = data as unknown as Team;
       setTeam(teamData);
 
-      // Fix 4b: busca players separada via profile_ids dos membros
+      // Busca players por profile_id
       const profileIds = (teamData.team_members ?? [])
         .map(m => m.profile_id)
         .filter(Boolean) as string[];
 
-      // Fix 4c: também busca por riot_account.game_name+tag_line como fallback
       const riotIds = (teamData.team_members ?? [])
         .map(m => m.riot_account)
         .filter(Boolean) as RiotAccount[];
@@ -121,7 +167,6 @@ export default function PainelCapitaoPage() {
         if (profileIds.length > 0) {
           playersQuery = playersQuery.in('profile_id', profileIds);
         } else {
-          // fallback: busca todos os players e filtra por nome abaixo
           const names = riotIds.map(r => r.game_name);
           playersQuery = playersQuery.in('summoner_name', names);
         }
@@ -129,15 +174,47 @@ export default function PainelCapitaoPage() {
         const { data: playersData } = await playersQuery;
         const map: Record<string, PlayerInfo> = {};
         for (const p of playersData ?? []) {
-          // indexa por profile_id (primário)
           if ((p as any).profile_id) map[(p as any).profile_id] = p as PlayerInfo;
-          // indexa por summoner_name#tag como fallback
           const key = `${(p.summoner_name ?? '').toLowerCase()}#${(p.tag_line ?? '').toLowerCase()}`;
           if (key !== '#') map[key] = p as PlayerInfo;
         }
         setPlayerMap(map);
       }
 
+      // Próximas partidas SCHEDULED envolvendo este time
+      const { data: partidas } = await supabase
+        .from('matches')
+        .select(`
+          id, round, match_number, scheduled_at, best_of,
+          team_a:teams!team_a_id ( id, name, tag ),
+          team_b:teams!team_b_id ( id, name, tag ),
+          tournament:tournaments ( id, name, slug )
+        `)
+        .eq('status', 'SCHEDULED')
+        .or(`team_a_id.eq.${teamId},team_b_id.eq.${teamId}`)
+        .order('scheduled_at', { ascending: true })
+        .limit(5);
+
+      setProximas((partidas ?? []) as unknown as ProximaPartida[]);
+
+      // Disputas abertas/em análise do time
+      const { data: disp } = await supabase
+        .from('disputes')
+        .select(`
+          id, status, reason, evidence_url, resolution_notes,
+          created_at, resolved_at,
+          match:matches (
+            id, round, match_number,
+            team_a:teams!team_a_id ( name, tag ),
+            team_b:teams!team_b_id ( name, tag )
+          ),
+          tournament:tournaments ( id, name, slug )
+        `)
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      setDisputas((disp ?? []) as unknown as Disputa[]);
       setLoading(false);
     }
     load();
@@ -150,7 +227,6 @@ export default function PainelCapitaoPage() {
       .from('team_members')
       .update({ lane: newLane })
       .eq('id', memberId);
-
     if (!updateErr) {
       setTeam(prev => prev ? {
         ...prev,
@@ -182,14 +258,16 @@ export default function PainelCapitaoPage() {
 
   if (!team) return null;
 
-  const members = team.team_members ?? [];
-  const insc    = team.inscricoes[0] as Inscricao | undefined;
-
-  const statusColor: Record<string, string> = {
-    PENDING:  'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
-    APPROVED: 'text-green-400 bg-green-400/10 border-green-400/30',
-    REJECTED: 'text-red-400 bg-red-400/10 border-red-400/30',
-  };
+  const members   = team.team_members ?? [];
+  const inscricoes = (team.inscricoes ?? []) as Inscricao[];
+  // Separa inscrições ativas (aprovadas primeiro, depois pendentes)
+  const inscAtivas = inscricoes
+    .filter(i => i.status !== 'REJECTED')
+    .sort((a, b) => {
+      const order: Record<string, number> = { APPROVED: 0, PENDING: 1 };
+      return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+    });
+  const disputasAbertas = disputas.filter(d => d.status === 'PENDING' || d.status === 'REVIEWING');
 
   return (
     <main className="min-h-screen bg-[#050E1A] py-10 px-4">
@@ -202,39 +280,159 @@ export default function PainelCapitaoPage() {
           </div>
           <div>
             <h1 className="text-white font-bold text-2xl">[{team.tag}] {team.name}</h1>
-            <p className="text-gray-500 text-sm">Painel do Capit\u00e3o</p>
+            <p className="text-gray-500 text-sm">Painel do Capitão</p>
           </div>
         </div>
 
-        {/* Status da Inscrição */}
-        {insc && (
-          <div className={`border rounded-xl p-4 ${statusColor[insc.status] ?? 'text-gray-400 bg-[#1E2A3A] border-[#1E3A5F]'}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-wider font-semibold mb-1">Status da Inscri\u00e7\u00e3o</p>
-                <p className="font-bold text-lg">{insc.status}</p>
-                {(insc.tournaments as any)?.name && (
-                  <p className="text-xs mt-1 opacity-70">🏆 {(insc.tournaments as any).name}</p>
-                )}
+        {/* Inscrições (todos os torneios) */}
+        {inscAtivas.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-white font-bold text-sm uppercase tracking-wider">🏆 Torneios</h2>
+            {inscAtivas.map(insc => (
+              <div
+                key={insc.id}
+                className={`border rounded-xl p-4 ${
+                  INSC_STATUS_COLOR[insc.status] ?? 'text-gray-400 bg-[#1E2A3A] border-[#1E3A5F]'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-1">
+                      {insc.status === 'APPROVED' ? 'Aprovado' : insc.status === 'PENDING' ? 'Aguardando aprovação' : insc.status}
+                    </p>
+                    {(insc.tournaments as any)?.name && (
+                      <p className="font-bold">{(insc.tournaments as any).name}</p>
+                    )}
+                    {insc.checked_in && insc.checked_in_at && (
+                      <p className="text-xs mt-1 opacity-60">
+                        ✅ Check-in: {new Date(insc.checked_in_at).toLocaleString('pt-BR')}
+                      </p>
+                    )}
+                  </div>
+                  {insc.status === 'APPROVED' && !insc.checked_in && (
+                    <Link
+                      href={`/dashboard/times/${teamId}/checkin`}
+                      className="btn-gold px-4 py-2 text-sm font-bold whitespace-nowrap"
+                    >
+                      📋 Fazer Check-in
+                    </Link>
+                  )}
+                  {insc.status === 'APPROVED' && insc.checked_in && (
+                    <Link
+                      href={`/torneios/${(insc.tournaments as any)?.id ?? insc.tournament_id}`}
+                      className="btn-outline-gold px-4 py-2 text-sm font-bold whitespace-nowrap"
+                    >
+                      Ver Torneio
+                    </Link>
+                  )}
+                </div>
               </div>
-              {insc.status === 'APPROVED' && (
-                <Link
-                  href={`/dashboard/times/${teamId}/checkin`}
-                  className="btn-gold px-4 py-2 text-sm font-bold"
-                >
-                  {insc.checked_in ? '\u2705 Check-in Feito' : '\ud83d\udccb Fazer Check-in'}
-                </Link>
-              )}
-            </div>
-            {insc.checked_in && insc.checked_in_at && (
-              <p className="text-xs mt-2 opacity-60">
-                Check-in realizado em {new Date(insc.checked_in_at).toLocaleString('pt-BR')}
-              </p>
-            )}
+            ))}
           </div>
         )}
 
-        {/* Jogadores */}
+        {/* Próximas partidas */}
+        {proximasPartidas.length > 0 && (
+          <div className="card-lol space-y-3">
+            <h2 className="text-white font-bold mb-2">⚔️ Próximas Partidas</h2>
+            {proximasPartidas.map(p => {
+              const adversario = p.team_a?.id === teamId ? p.team_b : p.team_a;
+              const ehTimeA    = p.team_a?.id === teamId;
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between bg-[#0D1E35] border border-[#1E3A5F] rounded-lg p-3 gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold">
+                      {ehTimeA ? `[${team.tag}]` : `[${adversario?.tag ?? '?'}]`}
+                      <span className="text-gray-500 mx-1">vs</span>
+                      {ehTimeA ? `[${adversario?.tag ?? 'TBD'}]` : `[${team.tag}]`}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      Rodada {p.round} · Partida {p.match_number} · BO{p.best_of}
+                      {p.tournament?.name && ` · ${p.tournament.name}`}
+                    </p>
+                    {p.scheduled_at && (
+                      <p className="text-[#C8A84B] text-xs mt-0.5">
+                        📍 {new Date(p.scheduled_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Disputas abertas */}
+        {disputasAbertas.length > 0 && (
+          <div className="card-lol space-y-3">
+            <h2 className="text-white font-bold mb-2">⚠️ Disputas Abertas ({disputasAbertas.length})</h2>
+            {disputasAbertas.map(d => (
+              <div
+                key={d.id}
+                className={`border rounded-lg p-3 text-sm ${
+                  DISPUTE_STATUS_COLOR[d.status] ?? 'text-gray-400 bg-[#1E2A3A] border-[#1E3A5F]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">
+                      {DISPUTE_STATUS_LABEL[d.status] ?? d.status}
+                      {d.tournament?.name && (
+                        <span className="text-xs font-normal opacity-70 ml-2">{d.tournament.name}</span>
+                      )}
+                    </p>
+                    {d.match && (
+                      <p className="text-xs opacity-70 mt-0.5">
+                        Rodada {d.match.round} · {d.match.team_a?.tag ?? '?'} vs {d.match.team_b?.tag ?? '?'}
+                      </p>
+                    )}
+                    <p className="text-xs opacity-60 mt-1 truncate">{d.reason}</p>
+                  </div>
+                  <span className="text-xs opacity-50 whitespace-nowrap">
+                    {new Date(d.created_at).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Disputas resolvidas recentes */}
+        {disputas.filter(d => d.status === 'ACCEPTED' || d.status === 'REJECTED').length > 0 && (
+          <details className="card-lol cursor-pointer">
+            <summary className="text-white font-bold text-sm select-none">
+              📜 Disputas Resolvidas
+            </summary>
+            <div className="mt-3 space-y-2">
+              {disputas
+                .filter(d => d.status === 'ACCEPTED' || d.status === 'REJECTED')
+                .map(d => (
+                  <div
+                    key={d.id}
+                    className={`border rounded-lg p-3 text-sm ${
+                      DISPUTE_STATUS_COLOR[d.status] ?? 'text-gray-400 bg-[#1E2A3A] border-[#1E3A5F]'
+                    }`}
+                  >
+                    <p className="font-semibold">
+                      {DISPUTE_STATUS_LABEL[d.status]}
+                      {d.tournament?.name && (
+                        <span className="text-xs font-normal opacity-70 ml-2">{d.tournament.name}</span>
+                      )}
+                    </p>
+                    {d.resolution_notes && (
+                      <p className="text-xs opacity-70 mt-1">{d.resolution_notes}</p>
+                    )}
+                  </div>
+                ))
+              }
+            </div>
+          </details>
+        )}
+
+        {/* Jogadores / Roster */}
         <div className="card-lol space-y-3">
           <h2 className="text-white font-bold mb-2">👥 Jogadores ({members.length}/5)</h2>
 
@@ -244,8 +442,6 @@ export default function PainelCapitaoPage() {
 
           {members.map(m => {
             const ra = m.riot_account;
-
-            // Resolve player: por profile_id primeiro, depois por nome#tag
             const playerByProfile = m.profile_id ? playerMap[m.profile_id] : null;
             const nameKey = `${(ra?.game_name ?? '').toLowerCase()}#${(ra?.tag_line ?? '').toLowerCase()}`;
             const playerByName = nameKey !== '#' ? playerMap[nameKey] : null;
@@ -274,12 +470,12 @@ export default function PainelCapitaoPage() {
                     <span className="text-gray-500 font-normal"> #{tagLine}</span>
                   </p>
                   <p className={`text-xs ${tierColor}`}>
-                    {tier} {player?.rank ?? ''} \u00b7 {player?.lp ?? 0} LP \u00b7 {player?.wins ?? 0}W/{player?.losses ?? 0}L \u00b7 {wr}% WR
+                    {tier} {player?.rank ?? ''} · {player?.lp ?? 0} LP · {player?.wins ?? 0}W/{player?.losses ?? 0}L · {wr}% WR
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   {justSaved && (
-                    <span className="text-green-400 text-xs">\u2713 Salvo</span>
+                    <span className="text-green-400 text-xs">✓ Salvo</span>
                   )}
                   <select
                     value={lane}
@@ -299,19 +495,14 @@ export default function PainelCapitaoPage() {
           })}
         </div>
 
-        {/* A\u00e7\u00f5es */}
+        {/* Ações */}
         <div className="flex gap-3">
           <Link href="/dashboard" className="btn-outline-gold flex-1 py-3 text-center text-sm">
-            \u2190 Dashboard
+            ← Dashboard
           </Link>
-          {insc?.tournament_id && (
-            <Link
-              href={`/torneios/${insc.tournament_id}`}
-              className="btn-gold flex-1 py-3 text-center text-sm"
-            >
-              Ver Torneio
-            </Link>
-          )}
+          <Link href={`/dashboard/times/${teamId}/roster`} className="btn-gold flex-1 py-3 text-center text-sm">
+            Gerenciar Roster
+          </Link>
         </div>
 
       </div>
