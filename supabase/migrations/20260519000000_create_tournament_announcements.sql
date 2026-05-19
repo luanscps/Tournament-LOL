@@ -57,6 +57,8 @@ CREATE POLICY "announcements_org_or_admin_all"
   );
 
 -- Times inscritos (aprovados) podem apenas LER os comunicados do torneio
+-- CORRECAO: enum team_member_status aceita: pending, accepted, rejected, left
+-- O valor 'active' NAO existe neste enum e causava erro 22P02
 CREATE POLICY "announcements_teams_select"
   ON public.tournament_announcements
   FOR SELECT
@@ -68,6 +70,6 @@ CREATE POLICY "announcements_teams_select"
       WHERE i.tournament_id = tournament_announcements.tournament_id
         AND i.status        = 'APPROVED'
         AND tm.profile_id   = auth.uid()
-        AND tm.status       = 'active'
+        AND tm.status       = 'accepted'
     )
   );
