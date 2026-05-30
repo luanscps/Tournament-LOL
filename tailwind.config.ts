@@ -1,10 +1,11 @@
 import type { Config } from "tailwindcss";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — sem types oficiais para esse caminho interno do Tailwind
 import flattenColorPalette from "tailwindcss/lib/util/flattenColorPalette";
 
-// Plugin do Aceternity UI: expõe cada cor Tailwind como variável CSS
-// ex: var(--sky-500), var(--neutral-800)
-function addVariablesForColors({ addBase, theme }: any) {
-  const allColors = flattenColorPalette(theme("colors"));
+/** Expõe cada cor Tailwind como variável CSS: var(--sky-500), var(--neutral-800) */
+function addVariablesForColors({ addBase, theme }: { addBase: (vars: Record<string, Record<string, string>>) => void; theme: (path: string) => Record<string, unknown> }) {
+  const allColors = flattenColorPalette(theme("colors")) as Record<string, string>;
   const newVars = Object.fromEntries(
     Object.entries(allColors).map(([key, val]) => [`--${key}`, val])
   );
@@ -33,47 +34,18 @@ const config: Config = {
           card:   "#112240",
           border: "#1E3A5F",
         },
-        tremor: {
-          brand: {
-            faint:    "#050D1A",
-            muted:    "#112240",
-            subtle:   "rgba(200,168,75,0.15)",
-            DEFAULT:  "#C8A84B",
-            emphasis: "#E8D48B",
-            inverted: "#050D1A",
-          },
-          background: {
-            muted:    "#0A1428",
-            subtle:   "#112240",
-            DEFAULT:  "#0D1B2E",
-            emphasis: "#1E3A5F",
-          },
-          border: {
-            DEFAULT: "rgba(30,58,95,0.9)",
-          },
-          ring: {
-            DEFAULT: "#C8A84B",
-          },
-          content: {
-            subtle:   "#4B5563",
-            DEFAULT:  "#94A3B8",
-            emphasis: "#F1F5F9",
-            strong:   "#FFFFFF",
-            inverted: "#050D1A",
-          },
-        },
       },
       fontFamily: {
         display: ["Sora", "Inter", "sans-serif"],
         body:    ["Inter", "sans-serif"],
       },
       animation: {
-        shimmer:             "shimmer 1.5s ease-in-out infinite",
-        float:               "float 3s ease-in-out infinite",
-        "background-shine":  "background-shine 2s linear infinite",
-        meteor:              "meteor 5s linear infinite",
-        spotlight:           "spotlight 2s ease .75s 1 forwards",
-        scroll:              "scroll var(--animation-duration, 40s) var(--animation-direction, forwards) linear infinite",
+        shimmer:            "shimmer 1.5s ease-in-out infinite",
+        float:              "float 3s ease-in-out infinite",
+        "background-shine": "background-shine 2s linear infinite",
+        meteor:             "meteor 5s linear infinite",
+        spotlight:          "spotlight 2s ease .75s 1 forwards",
+        scroll:             "scroll var(--animation-duration, 40s) var(--animation-direction, forwards) linear infinite",
       },
       keyframes: {
         shimmer: {
