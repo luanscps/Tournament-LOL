@@ -1,7 +1,16 @@
 "use client";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Meteors } from "@/components/ui/meteors";
+import { BackgroundBeams } from "@/components/ui/background-beams";
+import { MagneticButton } from "@/components/ui/magnetic-button";
+
+/* ─────────────────────────────────────────────────────────────────────────
+   HeroSection — PR6
+   Mudanças em relação à versão anterior:
+   • Meteors substituídos por BackgroundBeams (dourado, já customizado)
+   • CTAs envolvidos por MagneticButton
+   • Beams ficam z-0, abaixo de todos os outros layers
+───────────────────────────────────────────────────────────────────────── */
 
 export function HeroSection() {
   return (
@@ -15,16 +24,15 @@ export function HeroSection() {
           opacity: 0.28,
         }}
       />
-      {/* Gradientes */}
+
+      {/* Background Beams — z-0, atrás de tudo */}
+      <BackgroundBeams className="z-0" />
+
+      {/* Gradientes — z-10 */}
       <div className="absolute inset-0 bg-gradient-to-r from-[#050D1A] via-[#050D1A]/90 to-transparent z-10" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#050D1A]/60 to-transparent z-10" />
 
-      {/* Meteoros — efeito de partículas douradas */}
-      <div className="absolute inset-0 z-10 overflow-hidden pointer-events-none">
-        <Meteors number={12} />
-      </div>
-
-      {/* Conteúdo */}
+      {/* Conteúdo — z-20 */}
       <div className="relative z-20 p-8 md:p-16 max-w-2xl">
         <motion.span
           initial={{ opacity: 0, y: 12 }}
@@ -40,7 +48,7 @@ export function HeroSection() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-          className="font-display font-extrabold leading-[1.1] mb-4"
+          className="font-extrabold leading-[1.1] mb-4"
           style={{
             fontFamily: "var(--font-display)",
             fontSize: "clamp(2rem, 1.2rem + 2.5vw, 3.5rem)",
@@ -56,9 +64,14 @@ export function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.16, ease: [0.16, 1, 0.3, 1] }}
           className="mb-8"
-          style={{ fontSize: "var(--text-base)", color: "var(--text-muted)", maxWidth: "48ch" }}
+          style={{
+            fontSize: "var(--text-base)",
+            color: "var(--text-muted)",
+            maxWidth: "48ch",
+          }}
         >
-          Cadastre seu invocador, monte seu time e dispute torneios com bracket, stats reais e ranking oficial Riot.
+          Cadastre seu invocador, monte seu time e dispute torneios com
+          bracket, stats reais e ranking oficial Riot.
         </motion.p>
 
         <motion.div
@@ -67,12 +80,22 @@ export function HeroSection() {
           transition={{ duration: 0.4, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
           className="flex gap-4 flex-wrap"
         >
-          <Link href="/torneios" className="btn-gold text-base px-8 py-3">
-            Ver Torneios
-          </Link>
-          <Link href="/dashboard/jogador/registrar" className="btn-outline-gold text-base px-8 py-3">
-            Cadastrar Invocador
-          </Link>
+          {/* CTA primário — Magnetic com strength padrão */}
+          <MagneticButton strength={0.35}>
+            <Link href="/torneios" className="btn-gold text-base px-8 py-3">
+              Ver Torneios
+            </Link>
+          </MagneticButton>
+
+          {/* CTA secundário — Magnetic mais suave */}
+          <MagneticButton strength={0.22}>
+            <Link
+              href="/dashboard/jogador/registrar"
+              className="btn-outline-gold text-base px-8 py-3"
+            >
+              Cadastrar Invocador
+            </Link>
+          </MagneticButton>
         </motion.div>
       </div>
     </section>
