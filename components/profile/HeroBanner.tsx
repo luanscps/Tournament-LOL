@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Swords, User, ArrowLeft } from "lucide-react";
 import { Meteors } from "@/components/ui/meteors";
 
 interface BorderStyle {
@@ -57,7 +58,7 @@ export function HeroBanner({
       {/* Conteúdo */}
       <div
         className="relative max-w-6xl mx-auto px-4 pt-10 pb-8"
-        style={{ display: "flex", alignItems: "flex-end", gap: 24, flexWrap: "wrap" }}
+        style={{ display: "flex", alignItems: "flex-end", gap: "var(--sp-6)", flexWrap: "wrap" }}
       >
         {/* Ícone + moldura + badge de nível */}
         <div style={{ position: "relative", width: 110, height: 126, flexShrink: 0 }}>
@@ -68,6 +69,7 @@ export function HeroBanner({
                 width={86}
                 height={86}
                 alt="Ícone de perfil"
+                loading="lazy"
                 style={{ position: "absolute", top: 12, left: 12, width: 86, height: 86, borderRadius: "50%", display: "block", zIndex: 1 }}
               />
               {borderImg && (
@@ -77,6 +79,7 @@ export function HeroBanner({
                   height={110}
                   alt=""
                   aria-hidden="true"
+                  loading="lazy"
                   style={{ position: "absolute", top: 0, left: 0, width: 110, height: 110, display: "block", zIndex: 2, pointerEvents: "none" }}
                 />
               )}
@@ -88,7 +91,7 @@ export function HeroBanner({
                   color: borderStyle.color,
                   fontSize: 11, fontWeight: 700,
                   padding: "2px 10px",
-                  borderRadius: 9999, lineHeight: "16px",
+                  borderRadius: "var(--radius-full)", lineHeight: "16px",
                   whiteSpace: "nowrap",
                   boxShadow: `0 0 8px ${borderStyle.glow}`,
                 }}
@@ -101,26 +104,38 @@ export function HeroBanner({
 
         {/* Nome + stats pills */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 800, color: "#fff", lineHeight: 1.1, letterSpacing: "-0.5px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap", marginBottom: "var(--sp-2)" }}>
+            <h1
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: "var(--text-xl)",
+                fontWeight: 800,
+                color: "#fff",
+                lineHeight: 1.1,
+                letterSpacing: "-0.5px",
+              }}
+            >
               {gameName}
             </h1>
             <span style={{ color: "#6B7280", fontSize: 22, fontWeight: 700 }}>#{tagLine}</span>
             {mainChampName && (
-              <span className="stat-pill">⚔️ {mainChampName}</span>
+              <span className="stat-pill">
+                <Swords size={12} aria-hidden="true" />
+                {mainChampName}
+              </span>
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap", alignItems: "center" }}>
             {totalGames > 0 && (
               <>
                 <span className="stat-pill">{totalGames} jogos recentes</span>
                 <span
                   className="stat-pill"
                   style={{
-                    background:   recentWR >= 50 ? "rgba(74,222,128,0.1)"  : "rgba(248,113,113,0.1)",
-                    borderColor:  recentWR >= 50 ? "rgba(74,222,128,0.3)"  : "rgba(248,113,113,0.3)",
-                    color:        recentWR >= 50 ? "#4ADE80"                : "#F87171",
+                    background:   recentWR >= 50 ? "var(--win-dim)"  : "var(--loss-dim)",
+                    borderColor:  recentWR >= 50 ? "rgba(34,197,94,0.3)"   : "rgba(239,68,68,0.3)",
+                    color:        recentWR >= 50 ? "var(--win)"              : "var(--loss)",
                   }}
                 >
                   {totalWins}V {totalLosses}D · {recentWR}% WR
@@ -130,7 +145,8 @@ export function HeroBanner({
             )}
             {profileName && (
               <span className="stat-pill" style={{ color: "#60A5FA", borderColor: "rgba(96,165,250,0.3)", background: "rgba(96,165,250,0.1)" }}>
-                👤 {profileName}
+                <User size={12} aria-hidden="true" />
+                {profileName}
               </span>
             )}
           </div>
@@ -139,15 +155,25 @@ export function HeroBanner({
         <Link
           href="/jogadores"
           style={{
-            fontSize: 13, color: "#9CA3AF",
-            border: "1px solid #1E3A5F", borderRadius: 8,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--sp-2)",
+            fontSize: "var(--text-sm)",
+            color: "var(--text-muted)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
             padding: "6px 14px",
             background: "rgba(10,20,40,0.7)",
             textDecoration: "none",
-            flexShrink: 0, alignSelf: "flex-start", marginTop: 4,
+            flexShrink: 0,
+            alignSelf: "flex-start",
+            marginTop: 4,
+            transition: "border-color var(--duration) var(--ease-out), color var(--duration) var(--ease-out)",
           }}
+          className="hover:border-[var(--gold)] hover:text-[var(--gold)]"
         >
-          ← Jogadores
+          <ArrowLeft size={14} aria-hidden="true" />
+          Jogadores
         </Link>
       </div>
     </div>

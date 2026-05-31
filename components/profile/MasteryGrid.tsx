@@ -1,3 +1,4 @@
+import { Trophy } from "lucide-react";
 import { championIconByCDragon, masteryLevelColor } from "@/lib/riot";
 
 interface Mastery {
@@ -24,16 +25,36 @@ export function MasteryGrid({ masteries, champById }: MasteryGridProps) {
   return (
     <div
       style={{
-        background: "#0A1428",
-        border: "1px solid rgba(30,58,95,0.8)",
-        borderRadius: 16,
-        padding: 20,
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-lg)",
+        padding: "var(--sp-5)",
       }}
     >
-      <p style={{ color: "#9CA3AF", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-        🏆 Top Campeões — Maestria
-      </p>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      {/* Header da seção — sem emoji */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--sp-2)",
+          marginBottom: "var(--sp-4)",
+        }}
+      >
+        <Trophy size={14} style={{ color: "var(--gold)" }} aria-hidden="true" />
+        <p
+          style={{
+            color: "var(--text-muted)",
+            fontSize: "var(--text-xs)",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+          }}
+        >
+          Top Campeões — Maestria
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: "var(--sp-3)", flexWrap: "wrap" }}>
         {masteries.map((m) => {
           const name  = champById[m.championId] ?? m.championName ?? "";
           const color = masteryLevelColor(m.championLevel);
@@ -43,11 +64,13 @@ export function MasteryGrid({ masteries, champById }: MasteryGridProps) {
               key={m.championId}
               title={`${name} — M${m.championLevel} — ${pts}`}
               style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--sp-1)",
                 background: "rgba(10,20,40,0.7)",
                 border: `1.5px solid ${color}44`,
-                borderRadius: 12, padding: "10px 10px 8px", minWidth: 76,
-                transition: "transform 200ms ease, border-color 200ms ease",
+                borderRadius: "var(--radius-md)",
+                padding: "10px 10px 8px",
+                minWidth: 76,
+                transition: "transform 200ms var(--ease-out), border-color 200ms var(--ease-out)",
               }}
               className="hover:scale-105"
             >
@@ -57,24 +80,36 @@ export function MasteryGrid({ masteries, champById }: MasteryGridProps) {
                   width={52}
                   height={52}
                   alt={name}
-                  style={{ width: 52, height: 52, borderRadius: 8, objectFit: "cover", display: "block", border: `2px solid ${color}` }}
+                  loading="lazy"
+                  style={{ width: 52, height: 52, borderRadius: "var(--radius-sm)", objectFit: "cover", display: "block", border: `2px solid ${color}` }}
                 />
                 <span
                   style={{
                     position: "absolute", bottom: -6, right: -6,
                     background: "#050E1A", border: `1px solid ${color}`,
                     color, fontSize: 9, fontWeight: 800,
-                    borderRadius: 9999, padding: "1px 5px", lineHeight: "14px",
+                    borderRadius: "var(--radius-full)", padding: "1px 5px", lineHeight: "14px",
                     whiteSpace: "nowrap", zIndex: 2,
                   }}
                 >
                   M{m.championLevel}
                 </span>
               </div>
-              <p style={{ fontSize: 11, color: "#D1D5DB", maxWidth: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "center", marginTop: 8 }}>
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text)",
+                  maxWidth: 72,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  textAlign: "center",
+                  marginTop: "var(--sp-2)",
+                }}
+              >
                 {name}
               </p>
-              <p style={{ fontSize: 11, color, fontWeight: 700, textAlign: "center" }}>{pts}</p>
+              <p style={{ fontSize: "var(--text-xs)", color, fontWeight: 700, textAlign: "center" }}>{pts}</p>
             </div>
           );
         })}

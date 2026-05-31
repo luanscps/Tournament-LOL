@@ -2,6 +2,7 @@
 import { useRef } from "react";
 import { motion, useMotionValue, useSpring, useTransform, animate } from "framer-motion";
 import { useEffect } from "react";
+import { Flame, Sword } from "lucide-react";
 import { rankEmblemUrl } from "@/lib/riot";
 
 const TIER_COLORS: Record<string, string> = {
@@ -47,14 +48,14 @@ function AnimatedLP({ value }: { value: number }) {
 }
 
 /** Barra de winrate com largura animada via framer-motion */
-function WinrateBar({ wr, color }: { wr: number; color: string }) {
+function WinrateBar({ wr }: { wr: number }) {
   return (
     <div className="flex items-center gap-2" style={{ marginTop: "var(--sp-2)" }}>
       <div
         style={{
           flex: 1,
           height: 5,
-          borderRadius: 9999,
+          borderRadius: "var(--radius-full)",
           background: "rgba(30,58,95,0.6)",
           overflow: "hidden",
         }}
@@ -65,8 +66,8 @@ function WinrateBar({ wr, color }: { wr: number; color: string }) {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
           style={{
             height: "100%",
-            borderRadius: 9999,
-            background: wr >= 50 ? "#4ADE80" : "#F87171",
+            borderRadius: "var(--radius-full)",
+            background: wr >= 50 ? "var(--win)" : "var(--loss)",
           }}
         />
       </div>
@@ -75,7 +76,7 @@ function WinrateBar({ wr, color }: { wr: number; color: string }) {
           fontSize: "var(--text-xs)",
           fontWeight: 700,
           minWidth: 38,
-          color: wr >= 50 ? "#4ADE80" : "#F87171",
+          color: wr >= 50 ? "var(--win)" : "var(--loss)",
         }}
       >
         {wr}%
@@ -124,7 +125,7 @@ export function RankCard({ r }: { r: RankEntry }) {
         position: "relative",
         overflow: "hidden",
         cursor: "default",
-        boxShadow: `0 4px 20px rgba(0,0,0,0.35)`,
+        boxShadow: "var(--shadow-card)",
       }}
     >
       {/* Spotlight glow — segue cursor */}
@@ -151,6 +152,7 @@ export function RankCard({ r }: { r: RankEntry }) {
             width={80}
             height={80}
             alt={r.tier}
+            loading="lazy"
             style={{ width: 80, height: 80, objectFit: "contain" }}
           />
         </div>
@@ -192,44 +194,52 @@ export function RankCard({ r }: { r: RankEntry }) {
           </p>
 
           {/* Barra winrate animada */}
-          <WinrateBar wr={wr} color={color} />
+          <WinrateBar wr={wr} />
 
           {/* Stats */}
           <p style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)", marginTop: "var(--sp-1)" }}>
             {r.wins}V · {r.losses}D · {total} jogos
           </p>
 
-          {/* Badges */}
+          {/* Badges — sem emoji */}
           {(r.hotStreak || r.veteran) && (
             <div className="flex flex-wrap gap-1" style={{ marginTop: "var(--sp-2)" }}>
               {r.hotStreak && (
                 <span
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
                     fontSize: "var(--text-xs)",
                     background: "rgba(249,115,22,0.12)",
                     color: "#FB923C",
                     border: "1px solid rgba(249,115,22,0.28)",
-                    borderRadius: 9999,
+                    borderRadius: "var(--radius-full)",
                     padding: "2px 8px",
                     fontWeight: 700,
                   }}
                 >
-                  🔥 Hot Streak
+                  <Flame size={11} aria-hidden="true" />
+                  Hot Streak
                 </span>
               )}
               {r.veteran && (
                 <span
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
                     fontSize: "var(--text-xs)",
                     background: "var(--gold-dim)",
                     color: "var(--gold)",
                     border: "1px solid var(--border-gold)",
-                    borderRadius: 9999,
+                    borderRadius: "var(--radius-full)",
                     padding: "2px 8px",
                     fontWeight: 700,
                   }}
                 >
-                  ⚔️ Veterano
+                  <Sword size={11} aria-hidden="true" />
+                  Veterano
                 </span>
               )}
             </div>
