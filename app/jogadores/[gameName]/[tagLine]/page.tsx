@@ -11,6 +11,7 @@ import { HeroBanner }   from "@/components/profile/HeroBanner";
 import { RankCard }     from "@/components/profile/RankCard";
 import { MasteryGrid }  from "@/components/profile/MasteryGrid";
 import { MatchRow }     from "@/components/profile/MatchRow";
+import { ClipboardList, Gamepad2 } from "lucide-react";
 
 export const maxDuration = 60;
 
@@ -99,17 +100,7 @@ export default async function PlayerProfilePage({
     : "0.00";
 
   return (
-    <div className="min-h-screen bg-[#050E1A]">
-      <style>{`
-        .match-row:hover { background: rgba(30,58,95,0.4) !important; }
-        .stat-pill {
-          display:inline-flex; align-items:center; gap:4px;
-          background:rgba(200,168,75,0.1); border:1px solid rgba(200,168,75,0.25);
-          border-radius:9999px; padding:3px 10px; font-size:12px; color:#C8A84B;
-          font-weight:600; white-space:nowrap;
-        }
-      `}</style>
-
+    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
       {/* HERO BANNER — componente isolado */}
       <HeroBanner
         gameName={account.gameName}
@@ -131,7 +122,7 @@ export default async function PlayerProfilePage({
       {/* CORPO */}
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-        {/* RANK CARDS — componente isolado, sem border-left colorido */}
+        {/* RANK CARDS */}
         {(rankSolo || rankFlex) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
             {[rankSolo, rankFlex].filter(Boolean).map((r) => (
@@ -140,15 +131,35 @@ export default async function PlayerProfilePage({
           </div>
         )}
 
-        {/* MAESTRIA — componente isolado */}
+        {/* MAESTRIA */}
         <MasteryGrid masteries={tops} champById={champById} />
 
-        {/* HISTÓRICO — componente MatchRow isolado por partida */}
+        {/* HISTÓRICO */}
         {myMatches.length > 0 && (
-          <div style={{ background: "#0A1428", border: "1px solid rgba(30,58,95,0.8)", borderRadius: 16, overflow: "hidden" }}>
-            <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid rgba(30,58,95,0.6)" }}>
-              <p style={{ color: "#9CA3AF", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                📋 Histórico Recente ({myMatches.length} partidas)
+          <div
+            className="card"
+            style={{ padding: 0, overflow: "hidden", borderRadius: "var(--radius-lg)" }}
+          >
+            <div
+              style={{
+                padding: "16px 20px 12px",
+                borderBottom: "1px solid var(--border-soft, rgba(30,58,95,0.5))",
+              }}
+            >
+              <p
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: "var(--text-muted)",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                }}
+              >
+                <ClipboardList size={13} />
+                Histórico Recente ({myMatches.length} partidas)
               </p>
             </div>
             <div>
@@ -177,22 +188,41 @@ export default async function PlayerProfilePage({
           </div>
         )}
 
-        {/* EMPTY STATE */}
+        {/* EMPTY STATE — sem partidas recentes */}
         {totalGames === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+          <div className="card text-center" style={{ padding: "60px 20px" }}>
             <div
+              className="mx-auto mb-4 flex items-center justify-center animate-float"
               style={{
-                width: 64, height: 64, borderRadius: 16,
-                background: "rgba(200,168,75,0.08)",
-                border: "1px solid rgba(200,168,75,0.2)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                margin: "0 auto 16px", fontSize: 28,
+                width: 64,
+                height: 64,
+                borderRadius: "var(--radius-xl)",
+                background: "var(--gold-dim, rgba(200,168,75,0.08))",
+                border: "1px solid var(--border-gold, rgba(200,168,75,0.2))",
+                color: "var(--gold)",
               }}
             >
-              🎮
+              <Gamepad2 size={28} />
             </div>
-            <p style={{ fontSize: 16, fontWeight: 600, color: "#D1D5DB" }}>Nenhuma partida recente encontrada</p>
-            <p style={{ fontSize: 13, color: "#4B5563", marginTop: 6 }}>Os dados são atualizados automaticamente.</p>
+            <p
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: "var(--text-base)",
+                fontWeight: 600,
+                color: "var(--text)",
+                marginBottom: "var(--sp-2)",
+              }}
+            >
+              Nenhuma partida recente encontrada
+            </p>
+            <p
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--text-muted)",
+              }}
+            >
+              Os dados são atualizados automaticamente.
+            </p>
           </div>
         )}
       </div>

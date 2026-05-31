@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { TournamentCard } from "@/components/tournament/TournamentCard";
 import { StatsSection } from "@/components/home/StatsSection";
@@ -77,13 +78,12 @@ export default async function HomePage() {
                 width: 56,
                 height: 56,
                 borderRadius: "var(--radius-xl)",
-                background: "var(--gold-dim)",
-                border: "1px solid var(--border-gold)",
+                background: "var(--gold-dim, rgba(200,168,75,0.08))",
+                border: "1px solid var(--border-gold, rgba(200,168,75,0.2))",
                 color: "var(--gold)",
-                fontSize: 28,
               }}
             >
-              🏆
+              <Trophy size={24} />
             </div>
             <p
               style={{
