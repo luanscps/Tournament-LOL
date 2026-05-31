@@ -85,7 +85,6 @@ export default async function PlayerProfilePage({
     .eq("puuid", puuid)
     .limit(1);
   const riotRow = riotRows?.[0] ?? null;
-  // linkedProfileName: nome do perfil ArenaGG vinculado, ou null se não vinculado
   const linkedProfileName: string | null = (riotRow?.profiles as any)?.full_name ?? null;
 
   const myMatches = matches
@@ -141,27 +140,10 @@ export default async function PlayerProfilePage({
             className="card"
             style={{ padding: 0, overflow: "hidden", borderRadius: "var(--radius-lg)" }}
           >
-            <div
-              style={{
-                padding: "16px 20px 12px",
-                borderBottom: "1px solid var(--border-soft, rgba(30,58,95,0.5))",
-              }}
-            >
-              <p
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  color: "var(--text-muted)",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                }}
-              >
-                <ClipboardList size={13} />
-                Histórico Recente ({myMatches.length} partidas)
-              </p>
+            {/* Header da seção — usa classe .section-header do globals.css (PR17) */}
+            <div className="section-header">
+              <ClipboardList size={13} aria-hidden="true" />
+              Histórico Recente ({myMatches.length} partidas)
             </div>
             <div>
               {myMatches.map(({ match, me }) => (
@@ -197,8 +179,8 @@ export default async function PlayerProfilePage({
                 width: 64,
                 height: 64,
                 borderRadius: "var(--radius-xl)",
-                background: "var(--gold-dim, rgba(200,168,75,0.08))",
-                border: "1px solid var(--border-gold, rgba(200,168,75,0.2))",
+                background: "var(--gold-dim)",
+                border: "1px solid var(--border-gold)",
                 color: "var(--gold)",
               }}
             >

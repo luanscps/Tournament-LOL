@@ -12,7 +12,7 @@ const POSITION_PT: Record<string, string> = {
 };
 
 // Itens: DDragon com versão pinada (15.10.1) — elimina getDDVersion() em runtime.
-// Atualizar pin a cada patch maior. CDragon não expõe itens por ID numérico de forma estável.
+// Atualizar pin a cada patch maior.
 const ITEM_CDN_VERSION = "15.10.1";
 function itemIconUrl(itemId: number): string {
   if (!itemId || itemId === 0) return "";
@@ -48,7 +48,6 @@ interface MatchRowProps {
   gameDuration: number;
   gameStartTimestamp: number;
   pentaKills: number;
-  // ddVersion removido — PR14: item CDN usa versão pinada internamente
   champById: Record<number, string>;
 }
 
@@ -62,33 +61,24 @@ export function MatchRow({
   const queueName = QUEUE_NAMES[queueId] ?? `Fila ${queueId}`;
   const pos       = POSITION_PT[teamPosition] ?? POSITION_PT[individualPosition] ?? "—";
 
-  // Gradiente sutil por resultado — sem border-left colorida (padrão PR13)
-  const rowStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "12px 16px",
-    borderBottom: "1px solid var(--border-soft, rgba(30,58,95,0.4))",
-    transition: "background 150ms ease",
-    background: win
-      ? "linear-gradient(135deg, rgba(34,197,94,0.07) 0%, var(--surface) 40%)"
-      : "linear-gradient(135deg, rgba(239,68,68,0.07) 0%, var(--surface) 40%)",
-    border: win
-      ? "1px solid rgba(34,197,94,0.18)"
-      : "1px solid rgba(239,68,68,0.15)",
-  };
+  // Classe CSS gerenciada via globals.css (.match-row + .win/.loss)
+  // Sem inline style de border — resolve conflito border vs borderBottom do PR16
+  const resultClass = win ? "win" : "loss";
+  const champBorder = win ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)";
 
   return (
     <div
       key={matchId}
-      className="match-row group"
-      style={rowStyle}
+      className={`match-row ${resultClass}`}
     >
       {/* V/D */}
       <div
         style={{
-          width: 32, flexShrink: 0, textAlign: "center",
-          fontSize: "var(--text-xs)", fontWeight: 800,
+          width: 32,
+          flexShrink: 0,
+          textAlign: "center",
+          fontSize: "var(--text-xs)",
+          fontWeight: 800,
           color: win ? "var(--win)" : "var(--loss)",
         }}
       >
@@ -102,22 +92,30 @@ export function MatchRow({
           width={44}
           height={44}
           alt={champName}
+          loading="lazy"
           style={{
-            width: 44, height: 44, borderRadius: 8,
-            objectFit: "cover", display: "block",
-            border: `2px solid ${ win ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)" }`,
+            width: 44,
+            height: 44,
+            borderRadius: 8,
+            objectFit: "cover",
+            display: "block",
+            border: `2px solid ${champBorder}`,
           }}
         />
         {pos !== "—" && (
           <span
             style={{
-              position: "absolute", bottom: -4, right: -4,
+              position: "absolute",
+              bottom: -4,
+              right: -4,
               background: "var(--bg)",
-              fontSize: "var(--text-xs)", // era 8px — corrigido para 12px mínimo (PR14)
+              fontSize: "var(--text-xs)",
               fontWeight: 700,
               color: "var(--gold)",
               border: "1px solid var(--border)",
-              borderRadius: 4, padding: "1px 3px", lineHeight: 1.2,
+              borderRadius: 4,
+              padding: "1px 3px",
+              lineHeight: 1.2,
             }}
           >
             {pos}
@@ -143,15 +141,17 @@ export function MatchRow({
         </p>
       </div>
 
-      {/* Itens — DDragon versão pinada, sem prop ddVersion */}
+      {/* Itens — DDragon versão pinada */}
       <div style={{ display: "flex", gap: 3, flexShrink: 0, flexWrap: "wrap", maxWidth: 180 }}>
         {items.map((itemId, idx) => (
           <div
             key={idx}
             style={{
-              width: 24, height: 24,
-              background: itemId ? "var(--surface-2)" : "var(--border-soft, rgba(30,58,95,0.3))",
-              borderRadius: 4, overflow: "hidden",
+              width: 24,
+              height: 24,
+              background: itemId ? "var(--surface-2)" : "var(--border-soft)",
+              borderRadius: 4,
+              overflow: "hidden",
               border: "1px solid var(--border)",
               flexShrink: 0,
             }}
@@ -172,18 +172,26 @@ export function MatchRow({
 
       {/* Metadados */}
       <div style={{ marginLeft: "auto", textAlign: "right", flexShrink: 0 }}>
-        <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", lineHeight: 1 }}>{queueName}</p>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", lineHeight: 1 }}>
+          {queueName}
+        </p>
         <p style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)", marginTop: 2 }}>
           {fmtDuration(gameDuration)} · {timeAgo(gameStartTimestamp)}
         </p>
         {pentaKills > 0 && (
           <p
             style={{
-              display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3,
-              fontSize: "var(--text-xs)", color: "var(--gold)", fontWeight: 700, marginTop: 2,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 3,
+              fontSize: "var(--text-xs)",
+              color: "var(--gold)",
+              fontWeight: 700,
+              marginTop: 2,
             }}
           >
-            <Zap size={11} />
+            <Zap size={11} aria-hidden="true" />
             PENTA KILL
           </p>
         )}
