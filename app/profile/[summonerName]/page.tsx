@@ -5,7 +5,8 @@ import ProfileHeader from '@/components/profile/ProfileHeader';
 import RankedCards from '@/components/profile/RankedCards';
 import MatchHistoryRow from '@/components/profile/MatchHistoryRow';
 import ChampionStatsTable from '@/components/profile/ChampionStatsTable';
-import { getDDVersion, championSplashUrl } from '@/lib/riot';
+import { championSplashUrl } from '@/lib/riot';
+// getDDVersion removido — MatchHistoryRow e ChampionStatsTable migraram para CommunityDragon (PR13)
 
 async function getPlayerProfile(summonerName: string) {
   try {
@@ -29,13 +30,10 @@ export default async function ProfilePage({
   const data = await getPlayerProfile(summonerName);
   if (!data) return notFound();
 
-  // DD_VERSION ainda usado por MatchHistoryRow e ChampionStatsTable (migração futura)
-  const DD_VERSION = await getDDVersion();
   const topChamp = data.topMasteries?.[0]?.championName;
   const splashUrl = championSplashUrl(topChamp);
 
-  // isLinked: verifica se existe riot_account com puuid vinculado a um player no ArenaGG
-  // puuid é a fonte de verdade para identidade de conta (não summonerName)
+  // isLinked: verifica via puuid (fonte de verdade) se conta está vinculada no ArenaGG
   let isLinked = false;
   if (data.puuid) {
     const supabase = await createClient();
@@ -47,7 +45,7 @@ export default async function ProfilePage({
     isLinked = !!(riotAccount?.players);
   }
 
-  // Estatísticas agregadas por campeão
+  // Estatísticas agregadas por campeão (últimas 10 partidas)
   const champStats: Record<string, { games: number; wins: number; kills: number; deaths: number; assists: number }> = {};
   if (data.matchHistory) {
     for (const m of data.matchHistory) {
@@ -102,7 +100,7 @@ export default async function ProfilePage({
       </div>
 
       <div className="max-w-5xl mx-auto px-4 -mt-20 relative z-10 pb-16">
-        {/* Header: avatar + nome + nível */}
+        {/* Header */}
         <ProfileHeader
           summonerName={data.summonerName}
           tagLine={data.tagLine}
@@ -118,7 +116,7 @@ export default async function ProfilePage({
 
         {/* Grid principal */}
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
-          {/* Coluna Lateral: Maestrias e stats */}
+          {/* Coluna lateral: Maestrias + Stats */}
           <div className="space-y-6">
             <div>
               <h3 style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 'var(--sp-3)', paddingInline: 'var(--sp-1)' }}>
@@ -127,7 +125,7 @@ export default async function ProfilePage({
               <div className="card-sm space-y-3">
                 {data.topMasteries?.map((m: any) => (
                   <div key={m.championId} className="flex items-center gap-3">
-                    {/* CommunityDragon — padrão do projeto */}
+                    {/* CommunityDragon por championId — padrão do projeto */}
                     <img
                       src={`https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champion-icons/${m.championId}.png`}
                       alt={m.championName}
@@ -154,7 +152,8 @@ export default async function ProfilePage({
               <h3 style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 'var(--sp-3)', paddingInline: 'var(--sp-1)' }}>
                 Campeões (últimas 10)
               </h3>
-              <ChampionStatsTable champions={champList} DD_VERSION={DD_VERSION} />
+              {/* DD_VERSION removido — ChampionStatsTable usa CommunityDragon internamente */}
+              <ChampionStatsTable champions={champList} />
             </div>
           </div>
 
@@ -178,8 +177,8 @@ export default async function ProfilePage({
                     gameDuration={match.minutes * 60}
                     cs={match.cs ?? 0}
                     vision={match.vision ?? 0}
-                    DD_VERSION={DD_VERSION}
                     items={match.items}
+                    // DD_VERSION removido — componente usa CommunityDragon (PR13)
                   />
                 ))
               ) : (
