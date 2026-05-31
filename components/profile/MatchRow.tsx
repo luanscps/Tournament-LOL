@@ -11,9 +11,12 @@ const POSITION_PT: Record<string, string> = {
   BOTTOM: "ADC", UTILITY: "Sup", NONE: "—",
 };
 
-function itemIconUrl(ddVersion: string, itemId: number): string {
+// Itens: DDragon com versão pinada (15.10.1) — elimina getDDVersion() em runtime.
+// Atualizar pin a cada patch maior. CDragon não expõe itens por ID numérico de forma estável.
+const ITEM_CDN_VERSION = "15.10.1";
+function itemIconUrl(itemId: number): string {
   if (!itemId || itemId === 0) return "";
-  return `https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/item/${itemId}.png`;
+  return `https://ddragon.leagueoflegends.com/cdn/${ITEM_CDN_VERSION}/img/item/${itemId}.png`;
 }
 
 function fmtDuration(seconds: number): string {
@@ -45,57 +48,54 @@ interface MatchRowProps {
   gameDuration: number;
   gameStartTimestamp: number;
   pentaKills: number;
-  ddVersion: string;
+  // ddVersion removido — PR14: item CDN usa versão pinada internamente
   champById: Record<number, string>;
 }
 
 export function MatchRow({
   matchId, win, championId, championName, kills, deaths, assists,
   teamPosition, individualPosition, items, queueId, gameDuration,
-  gameStartTimestamp, pentaKills, ddVersion, champById,
+  gameStartTimestamp, pentaKills, champById,
 }: MatchRowProps) {
   const kda       = ((kills + assists) / Math.max(1, deaths)).toFixed(2);
   const champName = champById[championId] ?? championName;
   const queueName = QUEUE_NAMES[queueId] ?? `Fila ${queueId}`;
   const pos       = POSITION_PT[teamPosition] ?? POSITION_PT[individualPosition] ?? "—";
 
+  // Gradiente sutil por resultado — sem border-left colorida (padrão PR13)
+  const rowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px 16px",
+    borderBottom: "1px solid var(--border-soft, rgba(30,58,95,0.4))",
+    transition: "background 150ms ease",
+    background: win
+      ? "linear-gradient(135deg, rgba(34,197,94,0.07) 0%, var(--surface) 40%)"
+      : "linear-gradient(135deg, rgba(239,68,68,0.07) 0%, var(--surface) 40%)",
+    border: win
+      ? "1px solid rgba(34,197,94,0.18)"
+      : "1px solid rgba(239,68,68,0.15)",
+  };
+
   return (
     <div
       key={matchId}
-      className="match-row"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "12px 16px",
-        borderBottom: "1px solid var(--border-soft, rgba(30,58,95,0.4))",
-        transition: "background var(--ease-default, 0.15s ease)",
-        background: win
-          ? "linear-gradient(90deg, rgba(34,197,94,0.06) 0%, transparent 20%)"
-          : "linear-gradient(90deg, rgba(239,68,68,0.06) 0%, transparent 20%)",
-        borderLeft: `3px solid ${win ? "rgba(34,197,94,0.27)" : "rgba(239,68,68,0.27)"}`,
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.background = "rgba(30,58,95,0.35)";
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.background = win
-          ? "linear-gradient(90deg, rgba(34,197,94,0.06) 0%, transparent 20%)"
-          : "linear-gradient(90deg, rgba(239,68,68,0.06) 0%, transparent 20%)";
-      }}
+      className="match-row group"
+      style={rowStyle}
     >
       {/* V/D */}
       <div
         style={{
           width: 32, flexShrink: 0, textAlign: "center",
-          fontSize: 12, fontWeight: 800,
+          fontSize: "var(--text-xs)", fontWeight: 800,
           color: win ? "var(--win)" : "var(--loss)",
         }}
       >
         {win ? "V" : "D"}
       </div>
 
-      {/* Ícone campeão + posição */}
+      {/* Ícone campeão — CommunityDragon por championId */}
       <div style={{ position: "relative", flexShrink: 0 }}>
         <img
           src={championIconByCDragon(championId)}
@@ -105,7 +105,7 @@ export function MatchRow({
           style={{
             width: 44, height: 44, borderRadius: 8,
             objectFit: "cover", display: "block",
-            border: `2px solid ${win ? "rgba(34,197,94,0.27)" : "rgba(239,68,68,0.27)"}`,
+            border: `2px solid ${ win ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)" }`,
           }}
         />
         {pos !== "—" && (
@@ -113,7 +113,8 @@ export function MatchRow({
             style={{
               position: "absolute", bottom: -4, right: -4,
               background: "var(--bg)",
-              fontSize: 8, fontWeight: 700,
+              fontSize: "var(--text-xs)", // era 8px — corrigido para 12px mínimo (PR14)
+              fontWeight: 700,
               color: "var(--gold)",
               border: "1px solid var(--border)",
               borderRadius: 4, padding: "1px 3px", lineHeight: 1.2,
@@ -126,10 +127,10 @@ export function MatchRow({
 
       {/* KDA */}
       <div style={{ minWidth: 90, flexShrink: 0 }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
+        <p style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)", lineHeight: 1 }}>
           {kills} / <span style={{ color: "var(--loss)" }}>{deaths}</span> / {assists}
         </p>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginTop: 2 }}>
           KDA{" "}
           <span
             style={{
@@ -142,7 +143,7 @@ export function MatchRow({
         </p>
       </div>
 
-      {/* Itens */}
+      {/* Itens — DDragon versão pinada, sem prop ddVersion */}
       <div style={{ display: "flex", gap: 3, flexShrink: 0, flexWrap: "wrap", maxWidth: 180 }}>
         {items.map((itemId, idx) => (
           <div
@@ -157,10 +158,11 @@ export function MatchRow({
           >
             {itemId > 0 && (
               <img
-                src={itemIconUrl(ddVersion, itemId)}
+                src={itemIconUrl(itemId)}
                 width={24}
                 height={24}
                 alt=""
+                loading="lazy"
                 style={{ width: 24, height: 24, display: "block" }}
               />
             )}
@@ -170,15 +172,15 @@ export function MatchRow({
 
       {/* Metadados */}
       <div style={{ marginLeft: "auto", textAlign: "right", flexShrink: 0 }}>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1 }}>{queueName}</p>
-        <p style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", lineHeight: 1 }}>{queueName}</p>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)", marginTop: 2 }}>
           {fmtDuration(gameDuration)} · {timeAgo(gameStartTimestamp)}
         </p>
         {pentaKills > 0 && (
           <p
             style={{
               display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3,
-              fontSize: 11, color: "var(--gold)", fontWeight: 700, marginTop: 2,
+              fontSize: "var(--text-xs)", color: "var(--gold)", fontWeight: 700, marginTop: 2,
             }}
           >
             <Zap size={11} />

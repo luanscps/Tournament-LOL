@@ -3,7 +3,8 @@ import {
   getAccountByRiotId, getSummonerByPuuid, getLeagueEntriesByPuuid,
   getTopMasteriesByPuuid, getMatchIdsByPuuid, getMatchById,
   getAllChampions, profileIconUrl, profileIconBorderStyle,
-  profileBorderUrl, championSplashUrl, getDDVersion,
+  profileBorderUrl, championSplashUrl,
+  // getDDVersion removido — PR14: MatchRow usa versão pinada internamente
 } from "@/lib/riot";
 import { createClient } from "@/lib/supabase/server";
 import type { MatchParticipant } from "@/lib/riot";
@@ -66,7 +67,7 @@ export default async function PlayerProfilePage({
     .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof getMatchById>>> => r.status === "fulfilled")
     .map((r) => r.value);
 
-  const ddVersion   = await getDDVersion();
+  // getDDVersion removido — PR14: MatchRow encapsula versão de CDN internamente
   const iconUrl     = sum ? await profileIconUrl(sum.profileIconId) : null;
   const level       = sum?.summonerLevel ?? 0;
   const borderStyle = profileIconBorderStyle(level);
@@ -78,14 +79,15 @@ export default async function PlayerProfilePage({
   const mainChampName = tops[0] ? (champById[tops[0].championId] ?? tops[0].championName) : null;
   const mainSplash    = mainChampName ? championSplashUrl(mainChampName, 0) : null;
 
+  // isLinked: verifica via puuid (fonte de verdade) se conta está vinculada no ArenaGG
   const supabase = await createClient();
   const { data: riotRows } = await supabase
     .from("riot_accounts")
-    .select(`id, profile_id, profiles ( full_name )`)
-    .ilike("game_name", gameName)
-    .ilike("tag_line",  tagLine)
+    .select(`puuid, players ( id ), profiles ( full_name )`)
+    .eq("puuid", puuid)
     .limit(1);
-  const riotRow = riotRows?.[0] ?? null;
+  const riotRow  = riotRows?.[0] ?? null;
+  const isLinked = !!(riotRow?.players);
 
   const myMatches = matches
     .map((m) => ({ match: m, me: m.info.participants.find((p: MatchParticipant) => p.puuid === puuid) }))
@@ -101,7 +103,7 @@ export default async function PlayerProfilePage({
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
-      {/* HERO BANNER — componente isolado */}
+      {/* HERO BANNER */}
       <HeroBanner
         gameName={account.gameName}
         tagLine={account.tagLine}
@@ -117,6 +119,7 @@ export default async function PlayerProfilePage({
         recentWR={recentWR}
         avgKDA={avgKDA}
         profileName={(riotRow?.profiles as any)?.full_name ?? null}
+        isLinked={isLinked}
       />
 
       {/* CORPO */}
@@ -180,7 +183,7 @@ export default async function PlayerProfilePage({
                   gameDuration={match.info.gameDuration}
                   gameStartTimestamp={match.info.gameStartTimestamp}
                   pentaKills={me!.pentaKills}
-                  ddVersion={ddVersion}
+                  // ddVersion removido — PR14
                   champById={champById}
                 />
               ))}
@@ -188,7 +191,7 @@ export default async function PlayerProfilePage({
           </div>
         )}
 
-        {/* EMPTY STATE — sem partidas recentes */}
+        {/* EMPTY STATE */}
         {totalGames === 0 && (
           <div className="card text-center" style={{ padding: "60px 20px" }}>
             <div
@@ -215,12 +218,7 @@ export default async function PlayerProfilePage({
             >
               Nenhuma partida recente encontrada
             </p>
-            <p
-              style={{
-                fontSize: "var(--text-sm)",
-                color: "var(--text-muted)",
-              }}
-            >
+            <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
               Os dados são atualizados automaticamente.
             </p>
           </div>
