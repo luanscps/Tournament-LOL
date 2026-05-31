@@ -43,12 +43,12 @@ export function HeroBanner({
           }}
         />
       ) : (
-        <div style={{ position: "absolute", inset: 0, background: "#050E1A" }} />
+        <div style={{ position: "absolute", inset: 0, background: "var(--bg)" }} />
       )}
 
       {/* Gradientes de profundidade */}
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, #050E1A 35%, transparent 80%)" }} />
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, #050E1A 100%)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, var(--bg) 35%, transparent 80%)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, var(--bg) 100%)" }} />
 
       {/* Meteoros */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -70,7 +70,13 @@ export function HeroBanner({
                 height={86}
                 alt="Ícone de perfil"
                 loading="lazy"
-                style={{ position: "absolute", top: 12, left: 12, width: 86, height: 86, borderRadius: "50%", display: "block", zIndex: 1 }}
+                style={{
+                  position: "absolute", top: 12, left: 12,
+                  width: 86, height: 86,
+                  borderRadius: "50%",
+                  display: "block",
+                  zIndex: 1,
+                }}
               />
               {borderImg && (
                 <img
@@ -80,18 +86,26 @@ export function HeroBanner({
                   alt=""
                   aria-hidden="true"
                   loading="lazy"
-                  style={{ position: "absolute", top: 0, left: 0, width: 110, height: 110, display: "block", zIndex: 2, pointerEvents: "none" }}
+                  style={{
+                    position: "absolute", top: 0, left: 0,
+                    width: 110, height: 110,
+                    display: "block", zIndex: 2,
+                    pointerEvents: "none",
+                  }}
                 />
               )}
               <span
                 style={{
-                  position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)",
-                  zIndex: 3, background: "#050E1A",
+                  position: "absolute", bottom: 0, left: "50%",
+                  transform: "translateX(-50%)",
+                  zIndex: 3,
+                  background: "var(--bg)",
                   border: `1.5px solid ${borderStyle.color}`,
                   color: borderStyle.color,
                   fontSize: 11, fontWeight: 700,
                   padding: "2px 10px",
-                  borderRadius: "var(--radius-full)", lineHeight: "16px",
+                  borderRadius: "var(--radius-full)",
+                  lineHeight: "16px",
                   whiteSpace: "nowrap",
                   boxShadow: `0 0 8px ${borderStyle.glow}`,
                 }}
@@ -104,20 +118,34 @@ export function HeroBanner({
 
         {/* Nome + stats pills */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap", marginBottom: "var(--sp-2)" }}>
+          <div
+            style={{
+              display: "flex", alignItems: "center",
+              gap: "var(--sp-3)", flexWrap: "wrap",
+              marginBottom: "var(--sp-2)",
+            }}
+          >
             <h1
               style={{
                 fontFamily: "var(--font-display)",
                 fontSize: "var(--text-xl)",
                 fontWeight: 800,
-                color: "#fff",
+                color: "var(--text)",
                 lineHeight: 1.1,
                 letterSpacing: "-0.5px",
               }}
             >
               {gameName}
             </h1>
-            <span style={{ color: "#6B7280", fontSize: 22, fontWeight: 700 }}>#{tagLine}</span>
+            <span
+              style={{
+                color: "var(--text-faint)",
+                fontSize: 22,
+                fontWeight: 700,
+              }}
+            >
+              #{tagLine}
+            </span>
             {mainChampName && (
               <span className="stat-pill">
                 <Swords size={12} aria-hidden="true" />
@@ -126,16 +154,21 @@ export function HeroBanner({
             )}
           </div>
 
-          <div style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex", gap: "var(--sp-2)",
+              flexWrap: "wrap", alignItems: "center",
+            }}
+          >
             {totalGames > 0 && (
               <>
                 <span className="stat-pill">{totalGames} jogos recentes</span>
                 <span
                   className="stat-pill"
                   style={{
-                    background:   recentWR >= 50 ? "var(--win-dim)"  : "var(--loss-dim)",
-                    borderColor:  recentWR >= 50 ? "rgba(34,197,94,0.3)"   : "rgba(239,68,68,0.3)",
-                    color:        recentWR >= 50 ? "var(--win)"              : "var(--loss)",
+                    background:  recentWR >= 50 ? "var(--win-dim)"        : "var(--loss-dim)",
+                    borderColor: recentWR >= 50 ? "rgba(34,197,94,0.3)"  : "rgba(239,68,68,0.3)",
+                    color:       recentWR >= 50 ? "var(--win)"            : "var(--loss)",
                   }}
                 >
                   {totalWins}V {totalLosses}D · {recentWR}% WR
@@ -144,7 +177,14 @@ export function HeroBanner({
               </>
             )}
             {profileName && (
-              <span className="stat-pill" style={{ color: "#60A5FA", borderColor: "rgba(96,165,250,0.3)", background: "rgba(96,165,250,0.1)" }}>
+              <span
+                className="stat-pill"
+                style={{
+                  color: "var(--blue)",
+                  borderColor: "var(--blue-dim, rgba(85,145,199,0.3))",
+                  background: "var(--blue-dim, rgba(85,145,199,0.1))",
+                }}
+              >
                 <User size={12} aria-hidden="true" />
                 {profileName}
               </span>
@@ -152,6 +192,7 @@ export function HeroBanner({
           </div>
         </div>
 
+        {/* Botão voltar */}
         <Link
           href="/jogadores"
           style={{
@@ -163,7 +204,7 @@ export function HeroBanner({
             border: "1px solid var(--border)",
             borderRadius: "var(--radius-md)",
             padding: "6px 14px",
-            background: "rgba(10,20,40,0.7)",
+            background: "var(--surface)",
             textDecoration: "none",
             flexShrink: 0,
             alignSelf: "flex-start",

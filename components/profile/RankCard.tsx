@@ -41,7 +41,10 @@ function AnimatedLP({ value }: { value: number }) {
   }, [value, motionVal]);
 
   return (
-    <motion.span className="font-semibold tabular-nums" style={{ color: "var(--text)", fontSize: "var(--text-sm)" }}>
+    <motion.span
+      className="font-semibold tabular-nums"
+      style={{ color: "var(--text)", fontSize: "var(--text-sm)" }}
+    >
       {display}
     </motion.span>
   );
@@ -56,7 +59,7 @@ function WinrateBar({ wr }: { wr: number }) {
           flex: 1,
           height: 5,
           borderRadius: "var(--radius-full)",
-          background: "rgba(30,58,95,0.6)",
+          background: "var(--border)",
           overflow: "hidden",
         }}
       >
@@ -86,7 +89,7 @@ function WinrateBar({ wr }: { wr: number }) {
 }
 
 export function RankCard({ r }: { r: RankEntry }) {
-  const color = TIER_COLORS[r.tier] ?? "#fff";
+  const color = TIER_COLORS[r.tier] ?? "var(--text)";
   const total = r.wins + r.losses;
   const wr = total > 0 ? Math.round((r.wins / total) * 100) : 0;
 
@@ -188,7 +191,14 @@ export function RankCard({ r }: { r: RankEntry }) {
           </p>
 
           {/* LP animado */}
-          <p style={{ marginBottom: "var(--sp-2)", display: "flex", alignItems: "baseline", gap: 4 }}>
+          <p
+            style={{
+              marginBottom: "var(--sp-2)",
+              display: "flex",
+              alignItems: "baseline",
+              gap: 4,
+            }}
+          >
             <AnimatedLP value={r.leaguePoints} />
             <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>LP</span>
           </p>
@@ -197,11 +207,17 @@ export function RankCard({ r }: { r: RankEntry }) {
           <WinrateBar wr={wr} />
 
           {/* Stats */}
-          <p style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)", marginTop: "var(--sp-1)" }}>
+          <p
+            style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--text-faint)",
+              marginTop: "var(--sp-1)",
+            }}
+          >
             {r.wins}V · {r.losses}D · {total} jogos
           </p>
 
-          {/* Badges — sem emoji */}
+          {/* Badges Hot Streak / Veterano */}
           {(r.hotStreak || r.veteran) && (
             <div className="flex flex-wrap gap-1" style={{ marginTop: "var(--sp-2)" }}>
               {r.hotStreak && (
